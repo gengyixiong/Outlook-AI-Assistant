@@ -38,7 +38,8 @@
 - Outlook 搜索结果。
 - 邮箱索引或文件夹结构。
 
-AI 只生成受限 JSON。搜索由本机 Outlook Instant Search 执行。
+AI 只生成受限 JSON。加载项在本机从同一计划编译宽松、推荐和精确三档
+AQS；切换档位不会再次请求 AI。搜索由本机 Outlook Instant Search 执行。
 
 ## API Key
 

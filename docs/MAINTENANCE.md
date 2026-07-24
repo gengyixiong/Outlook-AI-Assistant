@@ -37,6 +37,15 @@ desktop/src/OutlookAiAssistant/Summary/SummaryService.cs
 
 只有 Outlook 官方 AQS 支持且能安全转义的字段才应加入。
 
+搜索文本条件分为：
+
+- `AnchorGroups`：产品名、项目号等很可能逐字出现的硬关键词。
+- `ConceptGroups`：业务概念及多语言同义词。
+- `HintGroups`：国家、客户类型等未必出现在邮件里的背景提示。
+
+`AqsQueryCompiler.CompileAll` 必须继续生成宽松、推荐和精确三档安全
+查询。默认查询以召回率为先；不要把所有模型字段重新拼成一条严格 AND。
+
 ### 修改右侧栏
 
 UI 使用代码构建，没有 Designer 文件：

@@ -15,8 +15,12 @@ Outlook UI
        └─ 搜索按钮
             └─ 用户输入文字 → SearchPlannerService → 在线 API
                  └─ SearchPlanParser
-                      └─ AqsQueryCompiler
-                           └─ OutlookSearchService → Explorer.Search
+                      └─ 硬关键词 / 概念同义词 / 软提示
+                           └─ AqsQueryCompiler
+                                ├─ 宽松 AQS（默认）
+                                ├─ 推荐 AQS
+                                └─ 精确 AQS
+                                     └─ OutlookSearchService → Explorer.Search
 ```
 
 两个功能的数据链路有意完全分开：
@@ -83,8 +87,13 @@ UI 只协调用户动作。可测试的转换逻辑必须留在服务层。
 
 1. `SearchPlannerService` 只发送用户输入的描述。
 2. `SearchPlanParser` 解析 snake_case JSON、限制数组大小并验证日期。
-3. `AqsQueryCompiler` 从白名单字段构建 AQS，清理引号、括号和换行。
-4. `SearchPlanFormatter` 把最终条件显示给用户。
+   如果模型误把“巴西客户、合作伙伴、主办方”等关系描述放入人员字段，
+   解析器会将其降级为精确档软提示，避免生成无效的 `from:` 条件。
+3. `AqsQueryCompiler` 从白名单字段构建三档 AQS，清理引号、括号和换行。
+   宽松档只使用第一个高价值硬关键词；没有硬关键词时使用第一个概念组。
+   推荐档增加概念和明确过滤器；精确档再增加可能不逐字出现的软提示。
+4. `SearchPlanFormatter` 显示模型理解和全部三档查询。
+5. 用户切换档位时只重新调用本地 `Explorer.Search`，不会再次请求 AI。
 
 模型的原始 AQS 或 DASL 永远不会直接执行。
 

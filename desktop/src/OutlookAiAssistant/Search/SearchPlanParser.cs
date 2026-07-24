@@ -12,6 +12,26 @@ namespace OutlookAiAssistant.Search
     /// </summary>
     public sealed class SearchPlanParser
     {
+        private static readonly string[] RelationshipDescriptions =
+        {
+            "客户",
+            "合作伙伴",
+            "主办方",
+            "供应商",
+            "同事",
+            "领导",
+            "老板",
+            "customer",
+            "client",
+            "partner",
+            "organizer",
+            "supplier",
+            "colleague",
+            "boss",
+            "sender",
+            "recipient"
+        };
+
         private readonly JavaScriptSerializer _serializer;
 
         public SearchPlanParser()
@@ -45,7 +65,15 @@ namespace OutlookAiAssistant.Search
             plan.To = ReadStringList(root, "to");
             plan.Cc = ReadStringList(root, "cc");
             plan.ToMe = ReadBoolean(root, "to_me", false);
+            plan.AnchorGroups = ReadGroups(root, "anchor_groups");
+            plan.ConceptGroups = ReadGroups(root, "concept_groups");
+            plan.HintGroups = ReadGroups(root, "hint_groups");
             plan.TextGroups = ReadGroups(root, "text_groups");
+            if (plan.ConceptGroups.Count == 0 && plan.TextGroups.Count > 0)
+            {
+                // Backward compatibility with plans produced by older prompts.
+                plan.ConceptGroups = plan.TextGroups;
+            }
             plan.SubjectGroups = ReadGroups(root, "subject_groups");
             plan.BodyGroups = ReadGroups(root, "body_groups");
             plan.ReceivedFrom = ReadString(root, "received_from");
@@ -61,9 +89,15 @@ namespace OutlookAiAssistant.Search
             TrimList(plan.From);
             TrimList(plan.To);
             TrimList(plan.Cc);
+            TrimGroups(plan.AnchorGroups);
+            TrimGroups(plan.ConceptGroups);
+            TrimGroups(plan.HintGroups);
             TrimGroups(plan.TextGroups);
             TrimGroups(plan.SubjectGroups);
             TrimGroups(plan.BodyGroups);
+            DemoteRelationshipDescriptions(plan.From, plan.HintGroups);
+            DemoteRelationshipDescriptions(plan.To, plan.HintGroups);
+            DemoteRelationshipDescriptions(plan.Cc, plan.HintGroups);
             return plan;
         }
 
@@ -298,6 +332,54 @@ namespace OutlookAiAssistant.Search
             {
                 groups.RemoveRange(12, groups.Count - 12);
             }
+        }
+
+        /// <summary>
+        /// A language model may still put "Brazilian customer" or "主办方" in
+        /// a sender field. Those phrases describe a relationship, not a real
+        /// Outlook identity, so they are moved to precise-only hints.
+        /// </summary>
+        private static void DemoteRelationshipDescriptions(
+            List<string> identities,
+            List<List<string>> hintGroups)
+        {
+            for (int index = identities.Count - 1; index >= 0; index--)
+            {
+                string value = identities[index];
+                if (!IsRelationshipDescription(value))
+                {
+                    continue;
+                }
+
+                identities.RemoveAt(index);
+                if (hintGroups.Count < 12)
+                {
+                    hintGroups.Add(new List<string> { value });
+                }
+            }
+        }
+
+        private static bool IsRelationshipDescription(string value)
+        {
+            string normalized = (value ?? string.Empty).Trim();
+            if (normalized.IndexOf('@') >= 0)
+            {
+                return false;
+            }
+
+            for (int index = 0;
+                index < RelationshipDescriptions.Length;
+                index++)
+            {
+                if (normalized.IndexOf(
+                        RelationshipDescriptions[index],
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }
