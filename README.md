@@ -26,6 +26,9 @@
 
 - 只把用户输入的搜索描述发送给配置的 AI 服务。
 - AI 返回受限 JSON 搜索计划；不允许返回并直接执行任意 AQS。
+- 搜索计划把条件分成硬关键词、概念同义词和软背景提示。
+- 默认只使用最独特的硬关键词执行宽松搜索，优先避免漏掉目标邮件。
+- 可在右侧栏切换宽松、推荐和精确三档，不会再次请求 AI。
 - 加载项在本机验证、转义并编译为 Outlook AQS。
 - 最终由 Outlook Instant Search 在本机索引中执行并显示结果。
 - 邮件标题、正文、候选邮件和搜索结果均不上传。
@@ -51,7 +54,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 输出：
 
 ```text
-desktop\release\Outlook-AI-Assistant-v0.1.0.zip
+desktop\release\Outlook-AI-Assistant-v0.2.0.zip
 ```
 
 安装：

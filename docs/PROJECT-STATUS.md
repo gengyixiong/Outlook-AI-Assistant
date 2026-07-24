@@ -19,7 +19,9 @@ classic Outlook 用户级 COM 加载项。
 - DeepSeek、OpenAI、豆包和自定义兼容 API 配置。
 - Windows DPAPI API Key 加密。
 - 自然语言转受限 JSON 搜索计划。
-- JSON 校验、字段白名单、值转义和 AQS 编译。
+- 搜索条件分层为硬关键词、概念同义词和软背景提示。
+- JSON 校验、字段白名单、值转义和宽松/推荐/精确三档 AQS 编译。
+- 默认宽松搜索与无需再次请求 AI 的三档切换按钮。
 - Outlook `Explorer.Search` 本地搜索调用。
 - 用户级安装和卸载脚本。
 - 无第三方依赖的构建与单元测试。
@@ -28,7 +30,7 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - COM 元数据 / RegAsm 解析：通过。
-- 单元测试：11/11 通过。
+- 单元测试：15/15 通过。
 
 ## 真实 Outlook 验收结果
 
@@ -44,7 +46,7 @@ classic Outlook 用户级 COM 加载项。
 ## 尚需用户 API Key 验收
 
 - 使用一个测试 API Key 验证真实会话背景与当前邮件摘要请求。
-- 使用当前 Outlook 索引验证 AQS 日期、附件和中文关键词搜索。
+- 使用当前 Outlook 索引验证三档 AQS、日期、附件和中文关键词搜索。
 - 确认关闭 Outlook 后更新与卸载流程。
 
 以上测试涉及用户自己的 API Key、真实邮件或卸载操作，因此未在自动验收中执行。
