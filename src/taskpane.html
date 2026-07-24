@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://appsforoffice.microsoft.com; script-src 'self' https://appsforoffice.microsoft.com; style-src 'self'; img-src 'self' data:; connect-src 'self';"/>
+    <title>Outlook AI 助手兼容性检测</title>
+    <link rel="stylesheet" href="/taskpane.css"/>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  </head>
+  <body>
+    <header class="hero">
+      <div class="hero__eyebrow">OUTLOOK AI ASSISTANT</div>
+      <h1>兼容性检测</h1>
+      <p>确认右侧栏、邮件读取、切换事件和认证能力。</p>
+    </header>
+
+    <main>
+      <section class="privacy-note" aria-label="隐私说明">
+        <span class="privacy-note__dot"></span>
+        本检测完全在本机运行，不会上传邮件内容。
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>运行环境</h2>
+            <p id="last-checked">等待 Outlook 初始化…</p>
+          </div>
+          <button id="run-checks" type="button">重新检测</button>
+        </div>
+        <div id="capability-list" class="capability-list" aria-live="polite"></div>
+      </section>
+
+      <section class="card">
+        <div class="section-heading">
+          <div>
+            <h2>当前邮件</h2>
+            <p>只显示必要字段和正文长度。</p>
+          </div>
+          <button id="read-current" class="button-secondary" type="button">读取</button>
+        </div>
+        <dl id="message-fields" class="message-fields">
+          <div>
+            <dt>状态</dt>
+            <dd>请先在 Outlook 中选择一封邮件。</dd>
+          </div>
+        </dl>
+        <details id="body-preview-panel" hidden>
+          <summary>查看正文开头（最多 500 字）</summary>
+          <pre id="body-preview"></pre>
+        </details>
+      </section>
+
+      <section class="card manual-card">
+        <h2>固定右侧栏人工检查</h2>
+        <ol>
+          <li>查看右侧栏右上角是否出现图钉图标。</li>
+          <li>点击图钉，使它变为固定状态。</li>
+          <li>切换到另一封邮件，确认本页面没有关闭。</li>
+          <li>确认“当前邮件”内容自动变为新邮件。</li>
+        </ol>
+      </section>
+
+      <section class="card">
+        <h2>事件记录</h2>
+        <div id="event-log" class="event-log" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <footer>
+      Phase 1 · Compatibility Probe · v0.1.0
+    </footer>
+
+    <script type="module" src="/taskpane.ts"></script>
+  </body>
+</html>

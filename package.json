@@ -1,0 +1,30 @@
+{
+  "name": "outlook-ai-assistant",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal Outlook Office.js add-in for email summaries and intelligent search.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "certs:install": "office-addin-dev-certs install --days 365",
+    "certs:verify": "office-addin-dev-certs verify",
+    "certs:uninstall": "office-addin-dev-certs uninstall",
+    "generate:icons": "node scripts/generate-icons.mjs",
+    "predev": "node scripts/generate-icons.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "check": "tsc --noEmit",
+    "smoke": "node scripts/smoke-test.mjs",
+    "validate:manifest": "office-addin-manifest validate manifest/manifest.xml",
+    "build": "node scripts/generate-icons.mjs && tsc --noEmit && vite build && node scripts/copy-release-files.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/office-js": "^1.0.600",
+    "office-addin-dev-certs": "^2.0.10",
+    "office-addin-manifest": "^2.1.6",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5"
+  }
+}

@@ -1,0 +1,52 @@
+# Local secrets and per-user configuration
+.env
+.env.*
+!.env.example
+**/settings.json
+**/secrets*.json
+**/credentials*.json
+**/appsettings.*.json
+
+# Keys and certificates
+*.key
+*.pem
+*.pfx
+*.p12
+*.cer
+*.crt
+
+# Outlook AI Assistant local data
+**/logs/
+*.log
+
+# .NET / Office build outputs
+desktop/build/Debug/
+desktop/build/Release/
+desktop/release/
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+*.nupkg
+*.zip
+
+# Node / Office.js prototype outputs
+node_modules/
+dist/
+coverage/
+
+# IDE and user-specific files
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+
+# Temporary and operating-system files
+*.tmp
+*.bak
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store
