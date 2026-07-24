@@ -8,6 +8,7 @@ using OutlookAiAssistant.Configuration;
 using OutlookAiAssistant.Diagnostics;
 using OutlookAiAssistant.Models;
 using OutlookAiAssistant.OutlookIntegration;
+using OutlookAiAssistant.Search;
 
 namespace OutlookAiAssistant.UI
 {
@@ -27,9 +28,14 @@ namespace OutlookAiAssistant.UI
         private Button _copySummaryButton;
         private TextBox _searchInput;
         private Button _searchButton;
+        private Button _broadSearchButton;
+        private Button _recommendedSearchButton;
+        private Button _preciseSearchButton;
         private RichTextBox _searchPlanOutput;
         private Label _status;
         private Label _providerStatus;
+        private SearchPlan _currentSearchPlan;
+        private SearchQuerySet _currentSearchQueries;
         private bool _busy;
 
         public AssistantPaneControl()
@@ -155,7 +161,8 @@ namespace OutlookAiAssistant.UI
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
             layout.ColumnCount = 1;
-            layout.RowCount = 4;
+            layout.RowCount = 5;
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -177,9 +184,37 @@ namespace OutlookAiAssistant.UI
             _searchInput.Margin = new Padding(3, 8, 3, 8);
             layout.Controls.Add(_searchInput);
 
-            _searchButton = CreatePrimaryButton("解析并在 Outlook 中搜索");
+            _searchButton = CreatePrimaryButton("解析并执行宽松搜索");
             _searchButton.Click += SearchClicked;
             layout.Controls.Add(_searchButton);
+
+            FlowLayoutPanel levels = new FlowLayoutPanel();
+            levels.AutoSize = true;
+            levels.Dock = DockStyle.Top;
+            levels.WrapContents = true;
+            levels.Margin = new Padding(0, 8, 0, 0);
+
+            _broadSearchButton = CreateSearchLevelButton("宽松");
+            _broadSearchButton.Click += delegate
+            {
+                SearchLevelClicked(SearchStrictness.Broad);
+            };
+            levels.Controls.Add(_broadSearchButton);
+
+            _recommendedSearchButton = CreateSearchLevelButton("推荐");
+            _recommendedSearchButton.Click += delegate
+            {
+                SearchLevelClicked(SearchStrictness.Recommended);
+            };
+            levels.Controls.Add(_recommendedSearchButton);
+
+            _preciseSearchButton = CreateSearchLevelButton("精确");
+            _preciseSearchButton.Click += delegate
+            {
+                SearchLevelClicked(SearchStrictness.Precise);
+            };
+            levels.Controls.Add(_preciseSearchButton);
+            layout.Controls.Add(levels);
 
             _searchPlanOutput = new RichTextBox();
             _searchPlanOutput.Dock = DockStyle.Fill;
@@ -310,12 +345,9 @@ namespace OutlookAiAssistant.UI
                     description,
                     addIn.Settings,
                     CancellationToken.None);
-                string aqs = addIn.QueryCompiler.Compile(plan);
-                _searchPlanOutput.Text =
-                    addIn.SearchPlanFormatter.Format(plan, aqs);
-                SetStatus("正在调用 Outlook 本地搜索……");
-                addIn.OutlookSearch.Search(aqs, plan.Scope);
-                SetStatus("搜索条件已交给 Outlook，本地结果已显示。");
+                _currentSearchPlan = plan;
+                _currentSearchQueries = addIn.QueryCompiler.CompileAll(plan);
+                ExecuteSearchLevel(SearchStrictness.Broad);
             }
             catch (Exception ex)
             {
@@ -325,6 +357,45 @@ namespace OutlookAiAssistant.UI
             {
                 SetBusy(false, null);
             }
+        }
+
+        private void SearchLevelClicked(SearchStrictness strictness)
+        {
+            if (_busy
+                || _currentSearchPlan == null
+                || _currentSearchQueries == null)
+            {
+                return;
+            }
+
+            SetBusy(true, "正在切换 Outlook 搜索范围……");
+            try
+            {
+                ExecuteSearchLevel(strictness);
+            }
+            catch (Exception ex)
+            {
+                ShowError("搜索失败", ex);
+            }
+            finally
+            {
+                SetBusy(false, null);
+            }
+        }
+
+        private void ExecuteSearchLevel(SearchStrictness strictness)
+        {
+            Connect addIn = RequireAddIn();
+            string aqs = _currentSearchQueries.Get(strictness);
+            _searchPlanOutput.Text = addIn.SearchPlanFormatter.Format(
+                _currentSearchPlan,
+                _currentSearchQueries,
+                strictness);
+            SetStatus("正在调用 Outlook 本地搜索……");
+            addIn.OutlookSearch.Search(aqs, _currentSearchPlan.Scope);
+            SetStatus(
+                FormatStrictness(strictness)
+                    + "条件已交给 Outlook，本地结果已显示。");
         }
 
         private bool EnsureConfigured()
@@ -387,6 +458,10 @@ namespace OutlookAiAssistant.UI
             _busy = busy;
             _summarizeButton.Enabled = !busy;
             _searchButton.Enabled = !busy;
+            bool canReuseSearch = !busy && _currentSearchQueries != null;
+            _broadSearchButton.Enabled = canReuseSearch;
+            _recommendedSearchButton.Enabled = canReuseSearch;
+            _preciseSearchButton.Enabled = canReuseSearch;
             if (!string.IsNullOrWhiteSpace(status))
             {
                 SetStatus(status);
@@ -431,6 +506,32 @@ namespace OutlookAiAssistant.UI
             button.FlatStyle = FlatStyle.Flat;
             button.FlatAppearance.BorderSize = 0;
             return button;
+        }
+
+        private static Button CreateSearchLevelButton(string text)
+        {
+            Button button = new Button();
+            button.Text = text;
+            button.AutoSize = true;
+            button.MinimumSize = new Size(88, 29);
+            button.Enabled = false;
+            button.Margin = new Padding(3, 0, 3, 3);
+            return button;
+        }
+
+        private static string FormatStrictness(SearchStrictness strictness)
+        {
+            switch (strictness)
+            {
+                case SearchStrictness.Broad:
+                    return "宽松搜索";
+                case SearchStrictness.Recommended:
+                    return "推荐搜索";
+                case SearchStrictness.Precise:
+                    return "精确搜索";
+                default:
+                    return "搜索";
+            }
         }
 
         private static string DisplaySubject(string subject)

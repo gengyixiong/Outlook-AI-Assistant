@@ -18,7 +18,11 @@ namespace OutlookAiAssistant.UnitTests
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             Run("Parses snake_case search plan", ParsesSnakeCaseSearchPlan);
-            Run("Compiles allow-listed AQS", CompilesAllowListedAqs);
+            Run("Compiles layered allow-listed AQS", CompilesLayeredAqs);
+            Run("Broad search uses only the first concept without anchors", BroadUsesFirstConcept);
+            Run("Broad search falls back to explicit fields", BroadFallsBackToExplicitFields);
+            Run("Parses legacy text groups as concepts", ParsesLegacyTextGroups);
+            Run("Demotes relationship descriptions from sender", DemotesRelationshipSender);
             Run("Sanitizes generated values", SanitizesGeneratedValues);
             Run("Rejects empty plans", RejectsEmptyPlans);
             Run("Rejects invalid date ranges", RejectsInvalidDateRanges);
@@ -42,7 +46,9 @@ namespace OutlookAiAssistant.UnitTests
                 "{"
                 + "\"from\":[\"Richard\"],"
                 + "\"to\":[],\"cc\":[],\"to_me\":true,"
-                + "\"text_groups\":[[\"Malaysia\"],[\"报价\",\"quotation\"]],"
+                + "\"anchor_groups\":[[\"GstarBIM\",\"Gstar BIM\"]],"
+                + "\"concept_groups\":[[\"大赛\",\"competition\"]],"
+                + "\"hint_groups\":[[\"Brazil\",\"Brasil\"]],"
                 + "\"subject_groups\":[],\"body_groups\":[],"
                 + "\"received_from\":\"2026-06-01\","
                 + "\"received_through\":\"2026-06-30\","
@@ -53,37 +59,113 @@ namespace OutlookAiAssistant.UnitTests
             SearchPlan plan = new SearchPlanParser().Parse(json);
             Equal("Richard", plan.From[0]);
             True(plan.ToMe, "to_me should be true");
-            Equal(2, plan.TextGroups.Count);
+            Equal(1, plan.AnchorGroups.Count);
+            Equal(2, plan.AnchorGroups[0].Count);
+            Equal(1, plan.ConceptGroups.Count);
+            Equal(1, plan.HintGroups.Count);
             Equal(true, plan.HasAttachments.Value);
             Equal("2026-06-30", plan.ReceivedThrough);
         }
 
-        private static void CompilesAllowListedAqs()
+        private static void CompilesLayeredAqs()
         {
             SearchPlan plan = new SearchPlan();
             plan.From.Add("Richard");
-            plan.ToMe = true;
-            plan.TextGroups.Add(new System.Collections.Generic.List<string>
+            plan.AnchorGroups.Add(new System.Collections.Generic.List<string>
             {
-                "Malaysia"
+                "GstarBIM",
+                "Gstar BIM"
             });
-            plan.TextGroups.Add(new System.Collections.Generic.List<string>
+            plan.AnchorGroups.Add(new System.Collections.Generic.List<string>
             {
-                "报价",
-                "quotation"
+                "second anchor"
+            });
+            plan.ConceptGroups.Add(new System.Collections.Generic.List<string>
+            {
+                "competition",
+                "contest"
+            });
+            plan.HintGroups.Add(new System.Collections.Generic.List<string>
+            {
+                "Brazil",
+                "Brasil"
             });
             plan.ReceivedFrom = "2026-06-01";
             plan.ReceivedThrough = "2026-06-30";
             plan.HasAttachments = true;
 
-            string query = new AqsQueryCompiler().Compile(plan);
+            SearchQuerySet queries = new AqsQueryCompiler().CompileAll(plan);
             Equal(
-                "from:\"Richard\" AND to:me AND \"Malaysia\""
-                + " AND (\"报价\" OR \"quotation\")"
+                "(\"GstarBIM\" OR \"Gstar BIM\")",
+                queries.Broad);
+            Equal(
+                "(\"GstarBIM\" OR \"Gstar BIM\")"
+                + " AND \"second anchor\""
+                + " AND (\"competition\" OR \"contest\")"
+                + " AND from:\"Richard\""
                 + " AND received:>=2026-06-01"
                 + " AND received:<=2026-06-30"
                 + " AND hasattachments:yes",
-                query);
+                queries.Recommended);
+            Equal(
+                "(\"GstarBIM\" OR \"Gstar BIM\")"
+                + " AND \"second anchor\""
+                + " AND (\"competition\" OR \"contest\")"
+                + " AND (\"Brazil\" OR \"Brasil\")"
+                + " AND from:\"Richard\""
+                + " AND received:>=2026-06-01"
+                + " AND received:<=2026-06-30"
+                + " AND hasattachments:yes",
+                queries.Precise);
+        }
+
+        private static void BroadUsesFirstConcept()
+        {
+            SearchPlan plan = new SearchPlan();
+            plan.ConceptGroups.Add(
+                new System.Collections.Generic.List<string>
+                {
+                    "competition",
+                    "contest"
+                });
+            plan.ConceptGroups.Add(
+                new System.Collections.Generic.List<string>
+                {
+                    "Brazil",
+                    "Brasil"
+                });
+
+            string query = new AqsQueryCompiler().Compile(plan);
+            Equal("(\"competition\" OR \"contest\")", query);
+        }
+
+        private static void BroadFallsBackToExplicitFields()
+        {
+            SearchPlan plan = new SearchPlan();
+            plan.From.Add("Richard");
+            plan.HasAttachments = true;
+
+            string query = new AqsQueryCompiler().Compile(plan);
+            Equal("from:\"Richard\" AND hasattachments:yes", query);
+        }
+
+        private static void ParsesLegacyTextGroups()
+        {
+            SearchPlan plan = new SearchPlanParser().Parse(
+                "{\"text_groups\":[[\"quotation\",\"quote\"]]}");
+            Equal(1, plan.ConceptGroups.Count);
+            Equal("quotation", plan.ConceptGroups[0][0]);
+        }
+
+        private static void DemotesRelationshipSender()
+        {
+            SearchPlan plan = new SearchPlanParser().Parse(
+                "{\"from\":[\"巴西客户\",\"Richard Li\"],"
+                + "\"hint_groups\":[]}");
+            Equal(1, plan.From.Count);
+            Equal("Richard Li", plan.From[0]);
+            Equal(1, plan.HintGroups.Count);
+            Equal("巴西客户", plan.HintGroups[0][0]);
         }
 
         private static void SanitizesGeneratedValues()
@@ -95,7 +177,9 @@ namespace OutlookAiAssistant.UnitTests
                     "quote\") OR from:(\"boss"
                 });
 
-            string query = new AqsQueryCompiler().Compile(plan);
+            string query = new AqsQueryCompiler().Compile(
+                plan,
+                SearchStrictness.Recommended);
             True(!query.Contains("\")"), "quotes and parentheses must be removed");
             True(
                 query.StartsWith("subject:\"", StringComparison.Ordinal),

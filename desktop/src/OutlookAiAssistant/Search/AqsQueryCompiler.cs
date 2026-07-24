@@ -15,13 +15,132 @@ namespace OutlookAiAssistant.Search
     {
         public string Compile(SearchPlan plan)
         {
+            return Compile(plan, SearchStrictness.Broad);
+        }
+
+        public SearchQuerySet CompileAll(SearchPlan plan)
+        {
+            PreparePlan(plan);
+            return new SearchQuerySet(
+                CompilePrepared(plan, SearchStrictness.Broad),
+                CompilePrepared(plan, SearchStrictness.Recommended),
+                CompilePrepared(plan, SearchStrictness.Precise));
+        }
+
+        public string Compile(
+            SearchPlan plan,
+            SearchStrictness strictness)
+        {
+            PreparePlan(plan);
+            return CompilePrepared(plan, strictness);
+        }
+
+        private static void PreparePlan(SearchPlan plan)
+        {
             if (plan == null)
             {
                 throw new ArgumentNullException("plan");
             }
 
             plan.Normalize();
+        }
+
+        private static string CompilePrepared(
+            SearchPlan plan,
+            SearchStrictness strictness)
+        {
             List<string> conditions = new List<string>();
+
+            if (strictness == SearchStrictness.Broad)
+            {
+                AddBroadConditions(conditions, plan);
+            }
+            else if (strictness == SearchStrictness.Recommended
+                || strictness == SearchStrictness.Precise)
+            {
+                AddTextGroups(
+                    conditions,
+                    string.Empty,
+                    plan.AnchorGroups,
+                    2);
+                AddTextGroups(
+                    conditions,
+                    string.Empty,
+                    GetConceptGroups(plan),
+                    2);
+
+                if (strictness == SearchStrictness.Precise)
+                {
+                    AddTextGroups(
+                        conditions,
+                        string.Empty,
+                        plan.HintGroups,
+                        2);
+                }
+
+                AddExplicitConditions(conditions, plan);
+            }
+            else
+            {
+                throw new ArgumentOutOfRangeException("strictness");
+            }
+
+            if (conditions.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    "没有生成可执行的搜索条件，请换一种说法再试。");
+            }
+
+            return string.Join(" AND ", conditions.ToArray());
+        }
+
+        /// <summary>
+        /// The default query contains only rare anchors. If no anchor exists,
+        /// it uses the first concept group without field restrictions. Explicit
+        /// filters are a final fallback so a field-only plan remains usable.
+        /// </summary>
+        private static void AddBroadConditions(
+            ICollection<string> conditions,
+            SearchPlan plan)
+        {
+            AddTextGroups(
+                conditions,
+                string.Empty,
+                plan.AnchorGroups,
+                1);
+            if (conditions.Count > 0)
+            {
+                return;
+            }
+
+            AddFirstTextGroup(
+                conditions,
+                GetConceptGroups(plan));
+            if (conditions.Count == 0)
+            {
+                AddFirstTextGroup(conditions, plan.SubjectGroups);
+            }
+
+            if (conditions.Count == 0)
+            {
+                AddFirstTextGroup(conditions, plan.BodyGroups);
+            }
+
+            if (conditions.Count == 0)
+            {
+                AddFirstTextGroup(conditions, plan.HintGroups);
+            }
+
+            if (conditions.Count == 0)
+            {
+                AddExplicitConditions(conditions, plan);
+            }
+        }
+
+        private static void AddExplicitConditions(
+            ICollection<string> conditions,
+            SearchPlan plan)
+        {
             AddFieldAlternatives(conditions, "from", plan.From);
             AddFieldAlternatives(conditions, "to", plan.To);
             AddFieldAlternatives(conditions, "cc", plan.Cc);
@@ -31,9 +150,16 @@ namespace OutlookAiAssistant.Search
                 conditions.Add("to:me");
             }
 
-            AddTextGroups(conditions, string.Empty, plan.TextGroups);
-            AddTextGroups(conditions, "subject", plan.SubjectGroups);
-            AddTextGroups(conditions, "body", plan.BodyGroups);
+            AddTextGroups(
+                conditions,
+                "subject",
+                plan.SubjectGroups,
+                12);
+            AddTextGroups(
+                conditions,
+                "body",
+                plan.BodyGroups,
+                12);
 
             if (!string.IsNullOrWhiteSpace(plan.ReceivedFrom))
             {
@@ -58,14 +184,6 @@ namespace OutlookAiAssistant.Search
             {
                 conditions.Add("read:" + (plan.IsUnread.Value ? "no" : "yes"));
             }
-
-            if (conditions.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "没有生成可执行的搜索条件，请换一种说法再试。");
-            }
-
-            return string.Join(" AND ", conditions.ToArray());
         }
 
         private static void AddFieldAlternatives(
@@ -89,9 +207,10 @@ namespace OutlookAiAssistant.Search
         private static void AddTextGroups(
             ICollection<string> conditions,
             string field,
-            IEnumerable<List<string>> groups)
+            IEnumerable<List<string>> groups,
+            int maximumGroups)
         {
-            foreach (List<string> group in groups.Take(12))
+            foreach (List<string> group in groups.Take(maximumGroups))
             {
                 if (group == null)
                 {
@@ -111,6 +230,21 @@ namespace OutlookAiAssistant.Search
                     .ToList();
                 AddAlternativeGroup(conditions, alternatives);
             }
+        }
+
+        private static void AddFirstTextGroup(
+            ICollection<string> conditions,
+            IEnumerable<List<string>> groups)
+        {
+            AddTextGroups(conditions, string.Empty, groups, 1);
+        }
+
+        private static IEnumerable<List<string>> GetConceptGroups(
+            SearchPlan plan)
+        {
+            return plan.ConceptGroups.Count > 0
+                ? plan.ConceptGroups
+                : plan.TextGroups;
         }
 
         private static void AddAlternativeGroup(

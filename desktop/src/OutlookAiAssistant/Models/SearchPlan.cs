@@ -12,6 +12,28 @@ namespace OutlookAiAssistant.Models
         public List<string> To { get; set; }
         public List<string> Cc { get; set; }
         public bool ToMe { get; set; }
+        /// <summary>
+        /// Rare, literal identifiers that are likely to occur in the target
+        /// message, for example a product name, project code or email address.
+        /// Each inner list contains spelling aliases joined with OR.
+        /// </summary>
+        public List<List<string>> AnchorGroups { get; set; }
+
+        /// <summary>
+        /// Business concepts and their multilingual synonyms. These are added
+        /// only after the broad anchor-only query.
+        /// </summary>
+        public List<List<string>> ConceptGroups { get; set; }
+
+        /// <summary>
+        /// Context such as country, customer type or relationship. Hints are
+        /// intentionally reserved for the precise query because they may not
+        /// literally occur in the message.
+        /// </summary>
+        public List<List<string>> HintGroups { get; set; }
+
+        // Legacy field retained so older compatible model responses can still
+        // be parsed. New prompts use ConceptGroups instead.
         public List<List<string>> TextGroups { get; set; }
         public List<List<string>> SubjectGroups { get; set; }
         public List<List<string>> BodyGroups { get; set; }
@@ -26,6 +48,9 @@ namespace OutlookAiAssistant.Models
             From = new List<string>();
             To = new List<string>();
             Cc = new List<string>();
+            AnchorGroups = new List<List<string>>();
+            ConceptGroups = new List<List<string>>();
+            HintGroups = new List<List<string>>();
             TextGroups = new List<List<string>>();
             SubjectGroups = new List<List<string>>();
             BodyGroups = new List<List<string>>();
@@ -39,6 +64,9 @@ namespace OutlookAiAssistant.Models
             From = From ?? new List<string>();
             To = To ?? new List<string>();
             Cc = Cc ?? new List<string>();
+            AnchorGroups = AnchorGroups ?? new List<List<string>>();
+            ConceptGroups = ConceptGroups ?? new List<List<string>>();
+            HintGroups = HintGroups ?? new List<List<string>>();
             TextGroups = TextGroups ?? new List<List<string>>();
             SubjectGroups = SubjectGroups ?? new List<List<string>>();
             BodyGroups = BodyGroups ?? new List<List<string>>();

@@ -6,9 +6,20 @@ namespace OutlookAiAssistant.Search
 {
     public sealed class SearchPlanFormatter
     {
-        public string Format(SearchPlan plan, string aqs)
+        public string Format(
+            SearchPlan plan,
+            SearchQuerySet queries,
+            SearchStrictness activeStrictness)
         {
             StringBuilder text = new StringBuilder();
+            AppendGroups(text, "必须关键词", plan.AnchorGroups);
+            AppendGroups(
+                text,
+                "相关概念",
+                plan.ConceptGroups.Count > 0
+                    ? plan.ConceptGroups
+                    : plan.TextGroups);
+            AppendGroups(text, "软提示（仅精确档）", plan.HintGroups);
             AppendList(text, "发件人", plan.From);
             AppendList(text, "收件人", plan.To);
             AppendList(text, "抄送", plan.Cc);
@@ -17,7 +28,6 @@ namespace OutlookAiAssistant.Search
                 text.AppendLine("收件条件：包含我");
             }
 
-            AppendGroups(text, "任意位置关键词", plan.TextGroups);
             AppendGroups(text, "主题关键词", plan.SubjectGroups);
             AppendGroups(text, "正文关键词", plan.BodyGroups);
             if (!string.IsNullOrWhiteSpace(plan.ReceivedFrom))
@@ -46,9 +56,33 @@ namespace OutlookAiAssistant.Search
                 "范围："
                     + (plan.Scope == "current_folder" ? "当前文件夹" : "所有文件夹"));
             text.AppendLine();
-            text.AppendLine("本地 Outlook AQS：");
-            text.AppendLine(aqs);
+            text.AppendLine("当前执行：" + FormatStrictness(activeStrictness));
+            text.AppendLine(queries.Get(activeStrictness));
+            text.AppendLine();
+            text.AppendLine("宽松（默认）：");
+            text.AppendLine(queries.Broad);
+            text.AppendLine();
+            text.AppendLine("推荐：");
+            text.AppendLine(queries.Recommended);
+            text.AppendLine();
+            text.AppendLine("精确：");
+            text.AppendLine(queries.Precise);
             return text.ToString().Trim();
+        }
+
+        private static string FormatStrictness(SearchStrictness strictness)
+        {
+            switch (strictness)
+            {
+                case SearchStrictness.Broad:
+                    return "宽松搜索";
+                case SearchStrictness.Recommended:
+                    return "推荐搜索";
+                case SearchStrictness.Precise:
+                    return "精确搜索";
+                default:
+                    return strictness.ToString();
+            }
         }
 
         private static void AppendList(
