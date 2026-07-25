@@ -54,7 +54,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 输出：
 
 ```text
-desktop\release\Outlook-AI-Assistant-v0.2.0.zip
+desktop\release\Outlook-AI-Assistant-v0.2.1.zip
 ```
 
 安装：
