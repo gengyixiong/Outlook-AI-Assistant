@@ -52,45 +52,14 @@ namespace OutlookAiAssistant.UI
             TableLayoutPanel root = new TableLayoutPanel();
             root.Dock = DockStyle.Fill;
             root.ColumnCount = 1;
-            root.RowCount = 4;
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            root.RowCount = 2;
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
 
-            Panel header = new Panel();
-            header.Dock = DockStyle.Top;
-            header.Height = 70;
-            header.Padding = new Padding(16, 14, 16, 6);
-            header.BackColor = Color.FromArgb(243, 247, 252);
-            Label title = new Label();
-            title.Text = "AI 邮件助手";
-            title.Font = new Font("Segoe UI Semibold", 14F);
-            title.AutoSize = true;
-            title.Location = new Point(14, 12);
-            Label subtitle = new Label();
-            subtitle.Text = "手动摘要 · 本地 Outlook 搜索";
-            subtitle.ForeColor = Color.DimGray;
-            subtitle.AutoSize = true;
-            subtitle.Location = new Point(16, 43);
-            header.Controls.Add(title);
-            header.Controls.Add(subtitle);
-            root.Controls.Add(header);
-
-            Label privacy = new Label();
-            privacy.Text =
-                "摘要：仅点击按钮后读取并发送当前邮件及同一会话历史。\r\n"
-                + "搜索：只发送你输入的描述，邮件与结果始终留在本机。";
-            privacy.AutoSize = true;
-            privacy.MaximumSize = new Size(380, 0);
-            privacy.Margin = new Padding(16, 10, 16, 8);
-            privacy.ForeColor = Color.FromArgb(45, 82, 120);
-            root.Controls.Add(privacy);
-
             TabControl tabs = new TabControl();
             tabs.Dock = DockStyle.Fill;
-            tabs.Margin = new Padding(10, 0, 10, 4);
+            tabs.Margin = new Padding(10, 8, 10, 4);
             tabs.TabPages.Add(BuildSummaryPage());
             tabs.TabPages.Add(BuildSearchPage());
             tabs.TabPages.Add(BuildSettingsPage());
