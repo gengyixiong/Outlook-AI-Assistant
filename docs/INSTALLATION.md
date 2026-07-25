@@ -11,7 +11,7 @@
 
 ## 安装
 
-1. 解压 `Outlook-AI-Assistant-v0.1.0.zip`。
+1. 解压 `Outlook-AI-Assistant-v0.2.1.zip`。
 2. 完全退出 Outlook，在任务管理器中确认没有 `OUTLOOK.EXE`。
 3. 双击 `Install.cmd`。
 4. 重新启动 classic Outlook。
