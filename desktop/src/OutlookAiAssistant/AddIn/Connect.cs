@@ -215,7 +215,7 @@ namespace OutlookAiAssistant.AddIn
             {
                 _taskPane = _taskPaneFactory.CreateCTP(
                     "OutlookAiAssistant.TaskPane",
-                    "AI 邮件助手",
+                    string.Empty,
                     Type.Missing);
                 _taskPane.DockPosition =
                     Office.MsoCTPDockPosition.msoCTPDockPositionRight;
