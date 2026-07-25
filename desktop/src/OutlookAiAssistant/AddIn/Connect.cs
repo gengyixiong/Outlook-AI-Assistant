@@ -213,9 +213,10 @@ namespace OutlookAiAssistant.AddIn
 
             try
             {
+                // Office requires a non-empty title; keep the pane chrome blank.
                 _taskPane = _taskPaneFactory.CreateCTP(
                     "OutlookAiAssistant.TaskPane",
-                    "AI 邮件助手",
+                    "\u200B",
                     Type.Missing);
                 _taskPane.DockPosition =
                     Office.MsoCTPDockPosition.msoCTPDockPositionRight;
