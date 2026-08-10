@@ -106,15 +106,19 @@ $compilerArguments = @(
   "/platform:anycpu",
   "/codepage:65001",
   "/warn:4",
-  "/out:$assemblyPath",
-  "/pdb:$pdbPath"
+  "/out:$assemblyPath"
 )
 
 if ($Configuration -eq "Release") {
-  $compilerArguments += @("/optimize+", "/debug:pdbonly")
+  $compilerArguments += "/optimize+"
 }
 else {
-  $compilerArguments += @("/optimize-", "/debug:full", "/define:DEBUG;TRACE")
+  $compilerArguments += @(
+    "/optimize-",
+    "/debug:full",
+    "/pdb:$pdbPath",
+    "/define:DEBUG;TRACE"
+  )
 }
 
 foreach ($reference in $references) {
@@ -177,9 +181,6 @@ if (-not $SkipPackage) {
 
   New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
   Copy-Item -LiteralPath $assemblyPath -Destination $packageRoot
-  if (Test-Path -LiteralPath $pdbPath) {
-    Copy-Item -LiteralPath $pdbPath -Destination $packageRoot
-  }
 
   Copy-Item -LiteralPath (Join-Path $desktopRoot "installer\install.ps1") `
     -Destination $packageRoot
