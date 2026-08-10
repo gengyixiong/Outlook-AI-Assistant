@@ -96,3 +96,7 @@ Office.js 兼容性探针。由于世纪互联环境无法完成个人侧载，�
 - [维护与发布](docs/MAINTENANCE.md)
 - [测试清单](docs/TEST-CHECKLIST.md)
 - [项目状态](docs/PROJECT-STATUS.md)
+
+## 许可证
+
+本项目采用 [MIT License](LICENSE)。
