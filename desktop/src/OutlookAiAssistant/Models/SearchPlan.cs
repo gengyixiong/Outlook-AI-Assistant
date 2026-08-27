@@ -8,6 +8,7 @@ namespace OutlookAiAssistant.Models
     /// </summary>
     public sealed class SearchPlan
     {
+        public List<string> MatchedContactIds { get; set; }
         public List<string> From { get; set; }
         public List<string> To { get; set; }
         public List<string> Cc { get; set; }
@@ -37,6 +38,8 @@ namespace OutlookAiAssistant.Models
         public List<List<string>> TextGroups { get; set; }
         public List<List<string>> SubjectGroups { get; set; }
         public List<List<string>> BodyGroups { get; set; }
+        public List<List<string>> AttachmentNameGroups { get; set; }
+        public List<string> AttachmentExtensions { get; set; }
         public string ReceivedFrom { get; set; }
         public string ReceivedThrough { get; set; }
         public bool? HasAttachments { get; set; }
@@ -45,6 +48,7 @@ namespace OutlookAiAssistant.Models
 
         public SearchPlan()
         {
+            MatchedContactIds = new List<string>();
             From = new List<string>();
             To = new List<string>();
             Cc = new List<string>();
@@ -54,6 +58,8 @@ namespace OutlookAiAssistant.Models
             TextGroups = new List<List<string>>();
             SubjectGroups = new List<List<string>>();
             BodyGroups = new List<List<string>>();
+            AttachmentNameGroups = new List<List<string>>();
+            AttachmentExtensions = new List<string>();
             ReceivedFrom = string.Empty;
             ReceivedThrough = string.Empty;
             Scope = "all_folders";
@@ -61,6 +67,7 @@ namespace OutlookAiAssistant.Models
 
         public void Normalize()
         {
+            MatchedContactIds = MatchedContactIds ?? new List<string>();
             From = From ?? new List<string>();
             To = To ?? new List<string>();
             Cc = Cc ?? new List<string>();
@@ -70,6 +77,9 @@ namespace OutlookAiAssistant.Models
             TextGroups = TextGroups ?? new List<List<string>>();
             SubjectGroups = SubjectGroups ?? new List<List<string>>();
             BodyGroups = BodyGroups ?? new List<List<string>>();
+            AttachmentNameGroups = AttachmentNameGroups
+                ?? new List<List<string>>();
+            AttachmentExtensions = AttachmentExtensions ?? new List<string>();
             ReceivedFrom = ReceivedFrom ?? string.Empty;
             ReceivedThrough = ReceivedThrough ?? string.Empty;
             Scope = string.IsNullOrWhiteSpace(Scope) ? "all_folders" : Scope.Trim();

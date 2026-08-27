@@ -37,7 +37,9 @@ namespace OutlookAiAssistant.Summary
                 settings.SummaryLanguage);
             string userPrompt = _promptBuilder.BuildUserPrompt(
                 conversation,
-                settings.MaxEmailCharacters);
+                settings.MaxEmailCharacters,
+                settings.IdentityEmailAddresses,
+                settings.IdentityAliases);
             return _client.CompleteAsync(
                 settings,
                 apiKey,

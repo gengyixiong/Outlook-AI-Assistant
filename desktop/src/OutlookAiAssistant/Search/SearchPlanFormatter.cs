@@ -12,6 +12,7 @@ namespace OutlookAiAssistant.Search
             SearchStrictness activeStrictness)
         {
             StringBuilder text = new StringBuilder();
+            AppendList(text, "匹配联系人 ID", plan.MatchedContactIds);
             AppendGroups(text, "必须关键词", plan.AnchorGroups);
             AppendGroups(
                 text,
@@ -30,6 +31,8 @@ namespace OutlookAiAssistant.Search
 
             AppendGroups(text, "主题关键词", plan.SubjectGroups);
             AppendGroups(text, "正文关键词", plan.BodyGroups);
+            AppendGroups(text, "附件名称", plan.AttachmentNameGroups);
+            AppendList(text, "附件类型", plan.AttachmentExtensions);
             if (!string.IsNullOrWhiteSpace(plan.ReceivedFrom))
             {
                 text.AppendLine("开始日期：" + plan.ReceivedFrom);

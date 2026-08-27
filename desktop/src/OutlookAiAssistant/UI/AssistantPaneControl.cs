@@ -94,7 +94,7 @@ namespace OutlookAiAssistant.UI
             _mailInfo.Margin = new Padding(3, 3, 3, 10);
             layout.Controls.Add(_mailInfo);
 
-            _summarizeButton = CreatePrimaryButton("生成会话背景与当前邮件摘要");
+            _summarizeButton = CreatePrimaryButton("生成 Executive Brief");
             _summarizeButton.Click += SummarizeClicked;
             layout.Controls.Add(_summarizeButton);
 
@@ -267,14 +267,14 @@ namespace OutlookAiAssistant.UI
                     + "\r\n当前正文字符："
                     + (email.Body ?? string.Empty).Length
                     + "；附件：" + email.AttachmentCount;
-                SetStatus("正在发送会话历史和当前邮件并生成摘要……");
+                SetStatus("正在发送会话历史和当前邮件并生成 Executive Brief……");
                 string summary = await addIn.SummaryService.SummarizeAsync(
                     conversation,
                     addIn.Settings,
                     CancellationToken.None);
                 _summaryOutput.Text = summary;
                 _copySummaryButton.Enabled = true;
-                SetStatus("会话背景与当前邮件摘要已生成。");
+                SetStatus("Executive Brief 已生成。");
             }
             catch (Exception ex)
             {
@@ -393,7 +393,7 @@ namespace OutlookAiAssistant.UI
 
             MessageBox.Show(
                 this,
-                "首次使用前，请先配置 API 地址、模型和 API Key。",
+                "首次使用前，请先选择 AI Provider 并配置 API Key。",
                 "AI 邮件助手",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -412,11 +412,10 @@ namespace OutlookAiAssistant.UI
             }
 
             AppSettings settings = addIn.Settings;
+            AiProviderPreset preset = AiProviderPreset.Find(
+                settings.ProviderId);
             _providerStatus.Text =
-                "提供商：" + settings.ProviderId + "\r\n"
-                + "模型：" + (string.IsNullOrWhiteSpace(settings.Model)
-                    ? "未配置"
-                    : settings.Model) + "\r\n"
+                "提供商：" + preset.DisplayName + "\r\n"
                 + "API Key：" + (addIn.SettingsStore.HasApiKey(settings)
                     ? "已加密保存"
                     : "未配置");

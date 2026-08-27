@@ -45,9 +45,9 @@ if (Test-Path -LiteralPath $installRoot) {
 
 if ($RemoveSettings -and (Test-Path -LiteralPath $productRoot)) {
   Remove-Item -LiteralPath $productRoot -Recurse -Force
-  Write-Host "The add-in, encrypted API key, settings and logs were removed."
+  Write-Host "The add-in, encrypted API key, settings, contact index and logs were removed."
 }
 else {
-  Write-Host "The add-in was removed. Settings and encrypted API key were preserved."
+  Write-Host "The add-in was removed. Settings, encrypted API key and contact index were preserved."
 }
 

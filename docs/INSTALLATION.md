@@ -11,7 +11,7 @@
 
 ## 安装
 
-1. 解压 `Outlook-AI-Assistant-v0.2.1.zip`。
+1. 解压 `Outlook-AI-Assistant-v0.3.0.zip`。
 2. 完全退出 Outlook，在任务管理器中确认没有 `OUTLOOK.EXE`。
 3. 双击 `Install.cmd`。
 4. 重新启动 classic Outlook。
@@ -26,17 +26,27 @@
 
 ## 首次配置
 
-在侧栏“设置”页选择：
+在侧栏“设置”页选择一个固定的低成本 Provider，并填写对应的 API Key：
 
-- DeepSeek：默认 `https://api.deepseek.com` 和
+- DeepSeek Flash：固定使用 `https://api.deepseek.com` 和
   `deepseek-v4-flash`。
-- OpenAI：默认 `https://api.openai.com/v1` 和
-  `gpt-5.6-sol`。
-- 豆包：默认方舟地址；模型字段填写控制台提供的模型或推理接入点 ID。
-- 自定义：填写兼容服务的根地址和模型名称。
+- GLM-5.3 Flash：固定使用 `https://open.bigmodel.cn/api/paas/v4` 和
+  `glm-5.3-flash`。
 
-地址既可以填写根地址，也可以直接填写完整
-`/chat/completions` 地址。
+API 地址和模型不可编辑。切换 Provider 后必须填写该 Provider 的 API Key，
+不会复用另一个 Provider 的密钥。
+
+还可以配置当前用户的其他邮箱地址与称呼别名，帮助 Executive Brief
+识别与你相关的事项。
+
+联系人索引不会后台构建。只有点击“重建联系人索引”后，系统才扫描 Outlook
+联系人候选及左侧栏中的自建邮件文件夹。自建文件夹的相对路径会作为人工归类标签，
+并关联其中邮件在本地解析出的 Contact ID。每位候选最早 1 封、最近最多 3 封
+代表邮件的受限正文摘录会发送给当前 Provider 做结构化提取。生成结果保存在：
+
+```text
+%LOCALAPPDATA%\OutlookAiAssistant\contact-index.json
+```
 
 ## 看不到侧栏
 
@@ -63,6 +73,7 @@
 2. 打开 Windows“索引选项”，确认 Microsoft Outlook 已被索引。
 3. 等待首次索引完成。
 4. 当前 Office UI 为英文，因此编译器使用英文 AQS 字段名。
+5. 如果自然语言使用的是联系人称呼而不是邮箱，请在设置中手动重建联系人索引。
 
 ## 更新
 
@@ -70,18 +81,18 @@
 2. 解压新发布包。
 3. 运行新包中的 `Install.cmd`。
 
-用户设置、API Key 和日志位于安装 DLL 之外，会保留。
+用户设置、API Key、联系人索引和日志位于安装 DLL 之外，会保留。
 
 ## 卸载
 
 退出 Outlook 后运行 `Uninstall.cmd`。
 
-默认保留设置和加密 API Key。要同时删除全部本地数据：
+默认保留设置、加密 API Key 和联系人索引。要同时删除全部本地数据：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File .\uninstall.ps1 -RemoveSettings
 ```
 
-该操作会永久删除设置、加密密钥和日志。
+该操作会永久删除设置、加密密钥、联系人索引、索引备份和日志。
 

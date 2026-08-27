@@ -1,6 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Windows.Forms;
 using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
+using OutlookAiAssistant.EntityIndex;
 using OutlookAiAssistant.Models;
 using OutlookAiAssistant.Search;
 using OutlookAiAssistant.Summary;
@@ -32,6 +36,20 @@ namespace OutlookAiAssistant.UnitTests
             Run("Trims quoted history from stored messages", TrimsQuotedHistory);
             Run("Keeps ordinary From lines", KeepsOrdinaryFromLines);
             Run("Builds separate history and current prompt", BuildsConversationPrompt);
+            Run("Exposes only fixed Flash providers", ExposesOnlyFlashProviders);
+            Run("Locks provider endpoint and model", LocksProviderConfiguration);
+            Run("Ignores legacy Windows folder setting", IgnoresLegacyFolderSetting);
+            Run("Builds executive brief identity prompt", BuildsExecutiveBriefPrompt);
+            Run("Settings hide endpoint and model editors", SettingsHideModelEditors);
+            Run("Round-trips contact index JSON", RoundTripsContactIndex);
+            Run("Backs up contact index safely", BacksUpContactIndex);
+            Run("Rejects malformed contact index", RejectsMalformedContactIndex);
+            Run("Creates stable unique contact IDs", CreatesStableContactIds);
+            Run("Stores Outlook folder contact labels", StoresOutlookFolderLabels);
+            Run("Resolves validated contact IDs", ResolvesValidatedContactIds);
+            Run("Drops unknown contact IDs", DropsUnknownContactIds);
+            Run("Compiles attachment search", CompilesAttachmentSearch);
+            Run("Folder context cannot become sender", FolderContextCannotBecomeSender);
 
             Console.WriteLine(
                 "Tests complete. Passed: {0}; Failed: {1}",
@@ -216,9 +234,9 @@ namespace OutlookAiAssistant.UnitTests
                 OpenAiCompatibleClient.BuildChatCompletionsUrl(
                     "https://api.deepseek.com/"));
             Equal(
-                "https://api.openai.com/v1/chat/completions",
+                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
                 OpenAiCompatibleClient.BuildChatCompletionsUrl(
-                    "https://api.openai.com/v1/chat/completions"));
+                    "https://open.bigmodel.cn/api/paas/v4/chat/completions"));
             Throws<InvalidOperationException>(
                 delegate
                 {
@@ -300,6 +318,431 @@ namespace OutlookAiAssistant.UnitTests
             True(
                 prompt.Contains("=== 当前选中的邮件 ==="),
                 "current email must have a distinct section");
+        }
+
+        private static void ExposesOnlyFlashProviders()
+        {
+            IList<AiProviderPreset> providers =
+                AiProviderPreset.CreateDefaults();
+            Equal(2, providers.Count);
+            Equal("deepseek", providers[0].Id);
+            Equal("deepseek-v4-flash", providers[0].DefaultModel);
+            Equal("zhipu", providers[1].Id);
+            Equal("glm-5.3-flash", providers[1].DefaultModel);
+            True(
+                providers[0].DefaultModel.IndexOf(
+                    "pro",
+                    StringComparison.OrdinalIgnoreCase) < 0,
+                "DeepSeek preset must not expose Pro");
+            True(
+                providers[1].DefaultModel.IndexOf(
+                    "pro",
+                    StringComparison.OrdinalIgnoreCase) < 0,
+                "Zhipu preset must not expose Pro");
+        }
+
+        private static void LocksProviderConfiguration()
+        {
+            string directory = CreateTemporaryDirectory();
+            try
+            {
+                SettingsStore store = new SettingsStore(directory);
+                AppSettings settings = new AppSettings();
+                settings.ProviderId = "openai";
+                settings.ApiBaseUrl = "https://example.com/v1";
+                settings.Model = "expensive-pro";
+                settings.ApiKeyCiphertext = "stale-key-ciphertext";
+                settings.IdentityEmailAddresses = "other@example.com";
+                settings.IdentityAliases = "Ethan; 耿工";
+                store.Save(settings);
+
+                AppSettings loaded = store.Load();
+                Equal("deepseek", loaded.ProviderId);
+                Equal("https://api.deepseek.com", loaded.ApiBaseUrl);
+                Equal("deepseek-v4-flash", loaded.Model);
+                Equal(string.Empty, loaded.ApiKeyCiphertext);
+                Equal("other@example.com", loaded.IdentityEmailAddresses);
+                Equal("Ethan; 耿工", loaded.IdentityAliases);
+
+                loaded.ProviderId = "zhipu";
+                loaded.Model = "glm-pro";
+                store.Save(loaded);
+                loaded = store.Load();
+                Equal("https://open.bigmodel.cn/api/paas/v4", loaded.ApiBaseUrl);
+                Equal("glm-5.3-flash", loaded.Model);
+            }
+            finally
+            {
+                DeleteTemporaryDirectory(directory);
+            }
+        }
+
+        private static void BuildsExecutiveBriefPrompt()
+        {
+            ConversationPromptBuilder builder =
+                new ConversationPromptBuilder();
+            string system = builder.BuildSystemPrompt("简体中文");
+            True(system.Contains("【结论】"), "conclusion section is required");
+            True(system.Contains("【与你相关】"), "personal section is required");
+            True(system.Contains("暂无需你处理。"), "empty action wording is required");
+            True(
+                !system.Contains("【关键往来时间线】"),
+                "old timeline section must be removed");
+            True(
+                system.Contains("不可信数据")
+                    && (system.Contains("不得执行")
+                        || system.Contains("不要执行")),
+                "prompt injection boundary must remain");
+
+            ConversationSnapshot conversation = new ConversationSnapshot();
+            conversation.CurrentEmail = new EmailSnapshot();
+            conversation.CurrentEmail.CurrentUserName = "Yixiong Geng";
+            conversation.CurrentEmail.CurrentUserEmail =
+                "yixiong.geng@hawksoft3d.com";
+            string user = builder.BuildUserPrompt(
+                conversation,
+                5000,
+                "other@example.com; yixiong.geng@hawksoft3d.com",
+                "Ethan, 耿工; Ethan Geng");
+            True(user.Contains("other@example.com"), "extra email must be present");
+            True(user.Contains("Ethan"), "English alias must be present");
+            True(user.Contains("耿工"), "Chinese alias must be present");
+            True(user.Contains("视为同一个人"), "identity equivalence is required");
+        }
+
+        private static void IgnoresLegacyFolderSetting()
+        {
+            string directory = CreateTemporaryDirectory();
+            try
+            {
+                SettingsStore store = new SettingsStore(directory);
+                Directory.CreateDirectory(directory);
+                File.WriteAllText(
+                    store.SettingsPath,
+                    "{\"ProviderId\":\"zhipu\","
+                        + "\"LocalFolderRoot\":\"C:\\\\OldReference\"}");
+                AppSettings loaded = store.Load();
+                Equal("zhipu", loaded.ProviderId);
+                Equal("glm-5.3-flash", loaded.Model);
+
+                store.Save(loaded);
+                True(
+                    File.ReadAllText(store.SettingsPath).IndexOf(
+                        "LocalFolderRoot",
+                        StringComparison.Ordinal) < 0,
+                    "legacy Windows folder setting must be removed on save");
+            }
+            finally
+            {
+                DeleteTemporaryDirectory(directory);
+            }
+        }
+
+        private static void SettingsHideModelEditors()
+        {
+            using (SettingsForm form = new SettingsForm(
+                new SettingsStore(),
+                new AppSettings()))
+            {
+                True(
+                    !ContainsControlText(form, "API 地址"),
+                    "API endpoint must not be editable");
+                True(
+                    !ContainsControlText(form, "模型 / 接入点 ID"),
+                    "model must not be editable");
+                True(
+                    !ContainsControlText(form, "本地参考文件夹")
+                        && !ContainsControlText(form, "选择文件夹"),
+                    "Windows folder picker must not remain");
+            }
+        }
+
+        private static void RoundTripsContactIndex()
+        {
+            ContactIndexStore store = new ContactIndexStore(
+                CreateTemporaryDirectory());
+            try
+            {
+                ContactIndex index = CreateContactIndex(
+                    "jieteng.luo@hawksoft3d.com",
+                    "Jason Luo");
+                index.Contacts[0].Aliases.Add("Jason");
+                FolderContextEntry folder = new FolderContextEntry
+                {
+                    Root = "Mailbox - Yixiong",
+                    RelativePath = "13. 土耳其代理商 system24"
+                };
+                folder.ContactIds.Add(index.Contacts[0].Id);
+                folder.ContactIds.Add("contact_does_not_exist");
+                index.FolderContext.Add(folder);
+                string json = store.Serialize(index);
+                True(json.Contains("\"created_at\""), "created_at must be snake_case");
+                True(json.Contains("\"folder_context\""), "folder_context must share the JSON");
+                True(json.Contains("\"contact_ids\""), "folder labels need contact IDs");
+
+                ContactIndex parsed = store.Parse(json);
+                Equal(1, parsed.Contacts.Count);
+                Equal("jieteng.luo@hawksoft3d.com", parsed.Contacts[0].Email);
+                True(parsed.Contacts[0].Aliases.Contains("Jason"), "alias must survive");
+                True(
+                    parsed.Contacts[0].Aliases.Contains("jieteng.luo"),
+                    "email local part must be an alias");
+                Equal(1, parsed.FolderContext.Count);
+                Equal(
+                    index.Contacts[0].Id,
+                    parsed.FolderContext[0].ContactIds[0]);
+                Equal(1, parsed.FolderContext[0].ContactIds.Count);
+            }
+            finally
+            {
+                DeleteTemporaryDirectory(store.DirectoryPath);
+            }
+        }
+
+        private static void BacksUpContactIndex()
+        {
+            string directory = CreateTemporaryDirectory();
+            try
+            {
+                ContactIndexStore store = new ContactIndexStore(directory);
+                store.Save(CreateContactIndex(
+                    "kun.ma@hawksoft3d.com",
+                    "Kun Ma"));
+                string first = File.ReadAllText(store.IndexPath);
+                store.Save(CreateContactIndex(
+                    "jieteng.luo@hawksoft3d.com",
+                    "Jason Luo"));
+                Equal(1, Directory.GetFiles(
+                    store.BackupDirectory,
+                    "contact-index-*.json").Length);
+
+                ContactIndex invalid = CreateContactIndex(
+                    "first@example.com",
+                    "First");
+                ContactProfile duplicate = new ContactProfile();
+                duplicate.Id = invalid.Contacts[0].Id;
+                duplicate.Email = "second@example.com";
+                invalid.Contacts.Add(duplicate);
+                string beforeFailure = File.ReadAllText(store.IndexPath);
+                Throws<InvalidOperationException>(delegate { store.Save(invalid); });
+                Equal(beforeFailure, File.ReadAllText(store.IndexPath));
+                True(first.Length > 0, "first index should have been written");
+            }
+            finally
+            {
+                DeleteTemporaryDirectory(directory);
+            }
+        }
+
+        private static void StoresOutlookFolderLabels()
+        {
+            ContactIndexStore store = new ContactIndexStore(
+                CreateTemporaryDirectory());
+            try
+            {
+                ContactIndex index = CreateContactIndex(
+                    "lais@example.com",
+                    "Lais Stefany");
+                FolderContextEntry folder = new FolderContextEntry();
+                folder.Root = "Mailbox - Yixiong";
+                folder.RelativePath = "Inbox\\客户\\巴西代理商 Lais Stefany";
+                folder.ContactIds.Add(index.Contacts[0].Id);
+                index.FolderContext.Add(folder);
+
+                ContactIndex parsed = store.Parse(store.Serialize(index));
+                Equal(1, parsed.FolderContext.Count);
+                Equal(folder.RelativePath, parsed.FolderContext[0].RelativePath);
+                Equal(
+                    index.Contacts[0].Id,
+                    parsed.FolderContext[0].ContactIds[0]);
+            }
+            finally
+            {
+                DeleteTemporaryDirectory(store.DirectoryPath);
+            }
+        }
+
+        private static void RejectsMalformedContactIndex()
+        {
+            ContactIndexStore store = new ContactIndexStore(
+                CreateTemporaryDirectory());
+            try
+            {
+                Throws<InvalidOperationException>(delegate
+                {
+                    store.Parse(
+                        "{\"version\":1,\"created_at\":\"2026-08-27T10:00:00\","
+                        + "\"contacts\":{},\"folder_context\":[]}");
+                });
+
+                ContactIndex index = CreateContactIndex(
+                    "known@example.com",
+                    "Known");
+                index.Contacts[0].Id = "contact_forged";
+                Throws<InvalidOperationException>(delegate
+                {
+                    store.Serialize(index);
+                });
+            }
+            finally
+            {
+                DeleteTemporaryDirectory(store.DirectoryPath);
+            }
+        }
+
+        private static void CreatesStableContactIds()
+        {
+            string first = ContactProfile.CreateId("Kun.Ma@HawkSoft3D.com");
+            string same = ContactProfile.CreateId(" kun.ma@hawksoft3d.com ");
+            string other = ContactProfile.CreateId(
+                "jieteng.luo@hawksoft3d.com");
+            Equal(first, same);
+            True(first != other, "different emails need different IDs");
+        }
+
+        private static void ResolvesValidatedContactIds()
+        {
+            ContactIndex index = new ContactIndex();
+            index.CreatedAt = DateTime.Now.ToString("s");
+            ContactProfile ma = CreateContact(
+                "kun.ma@hawksoft3d.com",
+                "Kun Ma",
+                "马坤");
+            ContactProfile jason = CreateContact(
+                "jieteng.luo@hawksoft3d.com",
+                "Jason Luo",
+                "Jason");
+            ContactProfile richard = CreateContact(
+                "richard@example.com",
+                "Richard",
+                "Richard");
+            index.Contacts.Add(ma);
+            index.Contacts.Add(jason);
+            index.Contacts.Add(richard);
+
+            SearchPlan plan = new SearchPlan();
+            plan.MatchedContactIds.Add(ma.Id);
+            plan.MatchedContactIds.Add(jason.Id);
+            plan.MatchedContactIds.Add(richard.Id);
+            new ContactIndexResolver().Resolve(plan, index);
+            Equal(3, plan.MatchedContactIds.Count);
+            True(plan.From.Contains(ma.Email), "Ma email must resolve locally");
+            True(plan.From.Contains(jason.Email), "Jason email must resolve locally");
+            True(plan.From.Contains(richard.Email), "Richard email must resolve locally");
+        }
+
+        private static void DropsUnknownContactIds()
+        {
+            ContactIndex index = CreateContactIndex(
+                "known@example.com",
+                "Known");
+            SearchPlan plan = new SearchPlan();
+            plan.MatchedContactIds.Add("contact_does_not_exist");
+            new ContactIndexResolver().Resolve(plan, index);
+            Equal(0, plan.MatchedContactIds.Count);
+            Equal(0, plan.From.Count);
+        }
+
+        private static void CompilesAttachmentSearch()
+        {
+            ContactIndex index = CreateContactIndex(
+                "kun.ma@hawksoft3d.com",
+                "Kun Ma");
+            string contactId = index.Contacts[0].Id;
+            SearchPlan plan = new SearchPlanParser().Parse(
+                "{\"matched_contact_ids\":[\"" + contactId + "\"],"
+                + "\"attachment_name_groups\":[[\"LT vs Pro\",\"LT PRO\"]],"
+                + "\"attachment_extensions\":[\".XLSX\",\"xls\"],"
+                + "\"has_attachments\":true}");
+            new ContactIndexResolver().Resolve(plan, index);
+            string query = new AqsQueryCompiler().Compile(
+                plan,
+                SearchStrictness.Recommended);
+            True(
+                query.Contains("from:\"kun.ma@hawksoft3d.com\""),
+                "resolved email must be used");
+            True(query.Contains("attachments:\"LT vs Pro\""), "filename must compile");
+            True(query.Contains("attachments:\"xlsx\""), "extension must compile");
+            True(query.Contains("hasattachments:yes"), "attachment filter is required");
+        }
+
+        private static void FolderContextCannotBecomeSender()
+        {
+            ContactIndex index = new ContactIndex();
+            index.CreatedAt = DateTime.Now.ToString("s");
+            index.FolderContext.Add(new FolderContextEntry
+            {
+                Root = "2026 H2",
+                RelativePath = "13. 土耳其代理商 system24"
+            });
+            SearchPlan plan = new SearchPlan();
+            plan.HintGroups.Add(new List<string> { "system24" });
+            new ContactIndexResolver().Resolve(plan, index);
+            string query = new AqsQueryCompiler().Compile(
+                plan,
+                SearchStrictness.Broad);
+            True(
+                !query.Contains("from:"),
+                "folder context must never compile as a sender");
+        }
+
+        private static ContactIndex CreateContactIndex(
+            string email,
+            string displayName)
+        {
+            ContactIndex index = new ContactIndex();
+            index.CreatedAt = DateTime.Now.ToString("s");
+            index.Contacts.Add(CreateContact(email, displayName, displayName));
+            return index;
+        }
+
+        private static ContactProfile CreateContact(
+            string email,
+            string displayName,
+            string alias)
+        {
+            ContactProfile contact = new ContactProfile();
+            contact.Id = ContactProfile.CreateId(email);
+            contact.Email = email;
+            contact.DisplayName = displayName;
+            contact.Aliases.Add(alias);
+            return contact;
+        }
+
+        private static bool ContainsControlText(Control root, string text)
+        {
+            if (string.Equals(root.Text, text, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            foreach (Control child in root.Controls)
+            {
+                if (ContainsControlText(child, text))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string CreateTemporaryDirectory()
+        {
+            string path = Path.Combine(
+                Path.GetTempPath(),
+                "OutlookAiAssistantTests",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path);
+            return path;
+        }
+
+        private static void DeleteTemporaryDirectory(string path)
+        {
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, true);
+            }
         }
 
         private static void Run(string name, Action test)

@@ -12,6 +12,8 @@ namespace OutlookAiAssistant.Configuration
         public string ApiKeyCiphertext { get; set; }
         public string SummaryLanguage { get; set; }
         public int MaxEmailCharacters { get; set; }
+        public string IdentityEmailAddresses { get; set; }
+        public string IdentityAliases { get; set; }
 
         public AppSettings()
         {
@@ -21,6 +23,8 @@ namespace OutlookAiAssistant.Configuration
             ApiKeyCiphertext = string.Empty;
             SummaryLanguage = "简体中文";
             MaxEmailCharacters = 40000;
+            IdentityEmailAddresses = string.Empty;
+            IdentityAliases = string.Empty;
         }
 
         public AppSettings Copy()
@@ -32,7 +36,9 @@ namespace OutlookAiAssistant.Configuration
                 Model = Model,
                 ApiKeyCiphertext = ApiKeyCiphertext,
                 SummaryLanguage = SummaryLanguage,
-                MaxEmailCharacters = MaxEmailCharacters
+                MaxEmailCharacters = MaxEmailCharacters,
+                IdentityEmailAddresses = IdentityEmailAddresses,
+                IdentityAliases = IdentityAliases
             };
         }
     }

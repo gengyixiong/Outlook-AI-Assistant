@@ -115,7 +115,8 @@ namespace OutlookAiAssistant.AI
 
             if (string.IsNullOrWhiteSpace(settings.Model))
             {
-                throw new InvalidOperationException("请先在设置中填写模型名称。");
+                throw new InvalidOperationException(
+                    "AI Provider 配置无效，请重新打开设置。");
             }
 
             string endpoint = BuildChatCompletionsUrl(settings.ApiBaseUrl);
@@ -144,7 +145,7 @@ namespace OutlookAiAssistant.AI
                 };
             }
 
-            // DeepSeek V4 enables thinking by default. These two short tasks do
+            // DeepSeek V4 enables thinking by default. These short tasks do
             // not require chain-of-thought, so disable it to reduce latency/cost.
             if (string.Equals(
                 settings.ProviderId,
@@ -166,7 +167,7 @@ namespace OutlookAiAssistant.AI
             request.ContentLength = body.Length;
             request.Timeout = 120000;
             request.ReadWriteTimeout = 120000;
-            request.UserAgent = "OutlookAiAssistant/0.1";
+            request.UserAgent = "OutlookAiAssistant/0.3.0";
 
             try
             {

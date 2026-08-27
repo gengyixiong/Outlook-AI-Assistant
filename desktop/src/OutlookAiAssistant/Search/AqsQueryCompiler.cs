@@ -160,6 +160,15 @@ namespace OutlookAiAssistant.Search
                 "body",
                 plan.BodyGroups,
                 12);
+            AddTextGroups(
+                conditions,
+                "attachments",
+                plan.AttachmentNameGroups,
+                12);
+            AddFieldAlternatives(
+                conditions,
+                "attachments",
+                plan.AttachmentExtensions);
 
             if (!string.IsNullOrWhiteSpace(plan.ReceivedFrom))
             {
@@ -173,7 +182,13 @@ namespace OutlookAiAssistant.Search
                     "received:<=" + NormalizeDate(plan.ReceivedThrough));
             }
 
-            if (plan.HasAttachments.HasValue)
+            bool hasAttachmentTerms = plan.AttachmentNameGroups.Count > 0
+                || plan.AttachmentExtensions.Count > 0;
+            if (hasAttachmentTerms)
+            {
+                conditions.Add("hasattachments:yes");
+            }
+            else if (plan.HasAttachments.HasValue)
             {
                 conditions.Add(
                     "hasattachments:"

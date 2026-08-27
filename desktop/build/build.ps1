@@ -30,7 +30,7 @@ function Find-FirstFile {
     }
   }
 
-  throw "Cannot find $Description. Install classic Outlook and .NET Framework 4.x."
+  throw "Cannot find $Description. Install the .NET Framework 4.8 Developer Pack."
 }
 
 function Find-GacAssembly {
@@ -64,7 +64,19 @@ $compiler = Find-FirstFile -Description ".NET Framework C# compiler" -Candidates
   "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe",
   "$env:WINDIR\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 )
-$frameworkDirectory = Split-Path -Parent $compiler
+$frameworkReferenceCandidates = @()
+if (-not [string]::IsNullOrWhiteSpace(${env:ProgramFiles(x86)})) {
+  $frameworkReferenceCandidates += Join-Path ${env:ProgramFiles(x86)} `
+    "Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll"
+}
+if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+  $frameworkReferenceCandidates += Join-Path $env:ProgramFiles `
+    "Reference Assemblies\Microsoft\Framework\.NETFramework\v4.8\mscorlib.dll"
+}
+$frameworkReferenceAssembly = Find-FirstFile `
+  -Description ".NET Framework 4.8 reference assemblies" `
+  -Candidates $frameworkReferenceCandidates
+$frameworkReferenceDirectory = Split-Path -Parent $frameworkReferenceAssembly
 $gacRoots = @(
   "$env:WINDIR\assembly\GAC_MSIL",
   "$env:WINDIR\assembly\GAC_32",
@@ -89,20 +101,25 @@ if ($sourceFiles.Count -eq 0) {
   throw "No C# source files were found."
 }
 
-$references = @(
-  (Join-Path $frameworkDirectory "System.dll"),
-  (Join-Path $frameworkDirectory "System.Core.dll"),
-  (Join-Path $frameworkDirectory "System.Drawing.dll"),
-  (Join-Path $frameworkDirectory "System.Security.dll"),
-  (Join-Path $frameworkDirectory "System.Web.Extensions.dll"),
-  (Join-Path $frameworkDirectory "System.Windows.Forms.dll"),
+$frameworkReferences = @(
+  $frameworkReferenceAssembly,
+  (Join-Path $frameworkReferenceDirectory "System.dll"),
+  (Join-Path $frameworkReferenceDirectory "System.Core.dll"),
+  (Join-Path $frameworkReferenceDirectory "System.Drawing.dll"),
+  (Join-Path $frameworkReferenceDirectory "System.Security.dll"),
+  (Join-Path $frameworkReferenceDirectory "System.Web.Extensions.dll"),
+  (Join-Path $frameworkReferenceDirectory "System.Windows.Forms.dll")
+)
+$references = $frameworkReferences + @(
   $officeInterop,
   $outlookInterop,
   $extensibility
 )
 
 $compilerArguments = @(
+  "/noconfig",
   "/target:library",
+  "/nostdlib+",
   "/platform:anycpu",
   "/codepage:65001",
   "/warn:4",
@@ -138,19 +155,18 @@ if (-not $SkipTests) {
     Sort-Object FullName |
     ForEach-Object FullName
   $testArguments = @(
+    "/noconfig",
     "/target:exe",
+    "/nostdlib+",
     "/platform:anycpu",
     "/codepage:65001",
     "/warn:4",
     "/out:$testExecutable",
-    "/reference:$assemblyPath",
-    ("/reference:" + (Join-Path $frameworkDirectory "System.dll")),
-    ("/reference:" + (Join-Path $frameworkDirectory "System.Core.dll")),
-    ("/reference:" + (Join-Path $frameworkDirectory "System.Web.Extensions.dll")),
-    ("/reference:" + (Join-Path $frameworkDirectory "System.Drawing.dll")),
-    ("/reference:" + (Join-Path $frameworkDirectory "System.Security.dll")),
-    ("/reference:" + (Join-Path $frameworkDirectory "System.Windows.Forms.dll"))
+    "/reference:$assemblyPath"
   )
+  foreach ($reference in $frameworkReferences) {
+    $testArguments += "/reference:$reference"
+  }
   $testArguments += $testSources
 
   Write-Host "Building unit tests..."
@@ -199,7 +215,7 @@ if (-not $SkipPackage) {
   Copy-Item -LiteralPath (Join-Path $desktopRoot "..\docs\INSTALLATION.md") `
     -Destination $packageDocs
 
-  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.2.1.zip"
+  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.3.0.zip"
   if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
   }

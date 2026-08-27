@@ -61,6 +61,9 @@ namespace OutlookAiAssistant.Search
             }
 
             SearchPlan plan = new SearchPlan();
+            plan.MatchedContactIds = ReadStringList(
+                root,
+                "matched_contact_ids");
             plan.From = ReadStringList(root, "from");
             plan.To = ReadStringList(root, "to");
             plan.Cc = ReadStringList(root, "cc");
@@ -76,6 +79,12 @@ namespace OutlookAiAssistant.Search
             }
             plan.SubjectGroups = ReadGroups(root, "subject_groups");
             plan.BodyGroups = ReadGroups(root, "body_groups");
+            plan.AttachmentNameGroups = ReadGroups(
+                root,
+                "attachment_name_groups");
+            plan.AttachmentExtensions = ReadStringList(
+                root,
+                "attachment_extensions");
             plan.ReceivedFrom = ReadString(root, "received_from");
             plan.ReceivedThrough = ReadString(root, "received_through");
             plan.HasAttachments = ReadNullableBoolean(root, "has_attachments");
@@ -86,6 +95,7 @@ namespace OutlookAiAssistant.Search
             ValidateDate(plan.ReceivedFrom, "开始日期");
             ValidateDate(plan.ReceivedThrough, "结束日期");
             ValidateDateOrder(plan);
+            TrimIdentifiers(plan.MatchedContactIds);
             TrimList(plan.From);
             TrimList(plan.To);
             TrimList(plan.Cc);
@@ -95,6 +105,8 @@ namespace OutlookAiAssistant.Search
             TrimGroups(plan.TextGroups);
             TrimGroups(plan.SubjectGroups);
             TrimGroups(plan.BodyGroups);
+            TrimGroups(plan.AttachmentNameGroups);
+            NormalizeExtensions(plan.AttachmentExtensions);
             DemoteRelationshipDescriptions(plan.From, plan.HintGroups);
             DemoteRelationshipDescriptions(plan.To, plan.HintGroups);
             DemoteRelationshipDescriptions(plan.Cc, plan.HintGroups);
@@ -307,6 +319,47 @@ namespace OutlookAiAssistant.Search
             if (values.Count > 20)
             {
                 values.RemoveRange(20, values.Count - 20);
+            }
+        }
+
+        private static void TrimIdentifiers(List<string> values)
+        {
+            TrimList(values);
+            for (int index = values.Count - 1; index >= 0; index--)
+            {
+                string value = values[index];
+                if (value.Length > 80
+                    || !value.StartsWith("contact_", StringComparison.Ordinal))
+                {
+                    values.RemoveAt(index);
+                }
+            }
+        }
+
+        private static void NormalizeExtensions(List<string> values)
+        {
+            TrimList(values);
+            for (int valueIndex = values.Count - 1;
+                valueIndex >= 0;
+                valueIndex--)
+            {
+                string value = values[valueIndex].Trim().TrimStart('.');
+                bool valid = value.Length > 0 && value.Length <= 12;
+                for (int characterIndex = 0;
+                    valid && characterIndex < value.Length;
+                    characterIndex++)
+                {
+                    valid = char.IsLetterOrDigit(value[characterIndex]);
+                }
+
+                if (valid)
+                {
+                    values[valueIndex] = value.ToLowerInvariant();
+                }
+                else
+                {
+                    values.RemoveAt(valueIndex);
+                }
             }
         }
 

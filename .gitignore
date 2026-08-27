@@ -18,6 +18,9 @@
 # Outlook AI Assistant local data
 **/logs/
 *.log
+**/contact-index.json
+**/contact-index.new.json
+**/contact-index-*.json
 
 # .NET / Office build outputs
 desktop/build/Debug/

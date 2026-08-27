@@ -4,8 +4,9 @@ This directory contains the maintained classic Outlook implementation.
 
 The project deliberately avoids VSTO project templates and NuGet packages.
 It uses the Office PIAs already installed with classic Outlook and the C#
-compiler included with .NET Framework. This makes the build repeatable on the
-current machine without Visual Studio.
+compiler plus reference assemblies from the .NET Framework 4.8 Developer
+Pack. This makes the build repeatable on the current machine without Visual
+Studio or the .NET SDK.
 
 ## Build
 

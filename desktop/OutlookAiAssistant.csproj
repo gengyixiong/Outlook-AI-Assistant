@@ -8,7 +8,8 @@
     <OutputType>Library</OutputType>
     <RootNamespace>OutlookAiAssistant</RootNamespace>
     <AssemblyName>OutlookAiAssistant</AssemblyName>
-    <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+    <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <FileAlignment>512</FileAlignment>
     <RegisterForComInterop>false</RegisterForComInterop>
   </PropertyGroup>

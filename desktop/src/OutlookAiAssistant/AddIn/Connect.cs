@@ -5,6 +5,7 @@ using Extensibility;
 using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
 using OutlookAiAssistant.Diagnostics;
+using OutlookAiAssistant.EntityIndex;
 using OutlookAiAssistant.OutlookIntegration;
 using OutlookAiAssistant.Search;
 using OutlookAiAssistant.Summary;
@@ -41,6 +42,8 @@ namespace OutlookAiAssistant.AddIn
         public SearchPlannerService SearchPlanner { get; private set; }
         public AqsQueryCompiler QueryCompiler { get; private set; }
         public SearchPlanFormatter SearchPlanFormatter { get; private set; }
+        public ContactIndexStore ContactIndexStore { get; private set; }
+        public ContactIndexService ContactIndexService { get; private set; }
 
         public void OnConnection(
             object application,
@@ -62,15 +65,21 @@ namespace OutlookAiAssistant.AddIn
                 Settings = SettingsStore.Load();
                 OpenAiCompatibleClient aiClient = new OpenAiCompatibleClient();
                 SearchPlanParser parser = new SearchPlanParser();
+                ContactIndexStore = new ContactIndexStore();
                 OutlookContext = new OutlookContextService(_application);
                 OutlookSearch = new OutlookSearchService(_application);
                 SummaryService = new SummaryService(aiClient, SettingsStore);
                 SearchPlanner = new SearchPlannerService(
                     aiClient,
                     SettingsStore,
-                    parser);
+                    parser,
+                    ContactIndexStore);
                 QueryCompiler = new AqsQueryCompiler();
                 SearchPlanFormatter = new SearchPlanFormatter();
+                ContactIndexService = new ContactIndexService(
+                    new OutlookContactScanner(_application),
+                    new ContactProfileExtractor(aiClient, SettingsStore),
+                    ContactIndexStore);
                 Logger.Info("Outlook add-in connected.");
             }
             catch (Exception ex)
@@ -189,7 +198,11 @@ namespace OutlookAiAssistant.AddIn
 
         public bool ShowSettings(IWin32Window owner)
         {
-            using (SettingsForm form = new SettingsForm(SettingsStore, Settings))
+            using (SettingsForm form = new SettingsForm(
+                SettingsStore,
+                Settings,
+                ContactIndexStore,
+                ContactIndexService))
             {
                 DialogResult result = owner == null
                     ? form.ShowDialog()
@@ -201,6 +214,14 @@ namespace OutlookAiAssistant.AddIn
 
                 Settings = form.SavedSettings;
                 return true;
+            }
+        }
+
+        internal void ApplySettings(AppSettings settings)
+        {
+            if (settings != null)
+            {
+                Settings = settings;
             }
         }
 

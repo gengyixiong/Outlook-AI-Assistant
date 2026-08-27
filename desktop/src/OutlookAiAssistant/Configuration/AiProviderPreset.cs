@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using System;
 
 namespace OutlookAiAssistant.Configuration
 {
     /// <summary>
-    /// A UI preset only. Users can always override the endpoint and model.
+    /// Allow-listed provider configuration. Endpoint and model are intentionally
+    /// fixed so the UI cannot drift to an unsupported or costly model.
     /// </summary>
     public sealed class AiProviderPreset
     {
@@ -38,29 +40,34 @@ namespace OutlookAiAssistant.Configuration
             {
                 new AiProviderPreset(
                     "deepseek",
-                    "DeepSeek",
+                    "DeepSeek Flash",
                     "https://api.deepseek.com",
                     "deepseek-v4-flash",
-                    "适合优先考虑成本与速度的摘要和查询解析。"),
+                    "固定使用 DeepSeek Flash 以控制 API 成本。"),
                 new AiProviderPreset(
-                    "openai",
-                    "OpenAI",
-                    "https://api.openai.com/v1",
-                    "gpt-5.6-sol",
-                    "使用 OpenAI Chat Completions 兼容接口。"),
-                new AiProviderPreset(
-                    "doubao",
-                    "豆包 / 火山方舟",
-                    "https://ark.cn-beijing.volces.com/api/v3",
-                    string.Empty,
-                    "模型字段请填写火山方舟控制台提供的模型或推理接入点 ID。"),
-                new AiProviderPreset(
-                    "custom",
-                    "自定义 OpenAI 兼容接口",
-                    string.Empty,
-                    string.Empty,
-                    "适用于其他提供 /chat/completions 的兼容服务。")
+                    "zhipu",
+                    "GLM-5.3 Flash",
+                    "https://open.bigmodel.cn/api/paas/v4",
+                    "glm-5.3-flash",
+                    "固定使用智谱 GLM-5.3 Flash 以控制 API 成本。")
             };
+        }
+
+        public static AiProviderPreset Find(string providerId)
+        {
+            IList<AiProviderPreset> presets = CreateDefaults();
+            for (int index = 0; index < presets.Count; index++)
+            {
+                if (string.Equals(
+                    presets[index].Id,
+                    providerId,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return presets[index];
+                }
+            }
+
+            return presets[0];
         }
     }
 }

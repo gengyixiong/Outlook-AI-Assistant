@@ -21,10 +21,22 @@ namespace OutlookAiAssistant.Configuration
         public string SettingsPath { get; private set; }
 
         public SettingsStore()
-        {
-            SettingsDirectory = Path.Combine(
+            : this(Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "OutlookAiAssistant");
+                "OutlookAiAssistant"))
+        {
+        }
+
+        public SettingsStore(string settingsDirectory)
+        {
+            if (string.IsNullOrWhiteSpace(settingsDirectory))
+            {
+                throw new ArgumentException(
+                    "Settings directory is required.",
+                    "settingsDirectory");
+            }
+
+            SettingsDirectory = Path.GetFullPath(settingsDirectory);
             SettingsPath = Path.Combine(SettingsDirectory, "settings.json");
             _serializer = new JavaScriptSerializer();
         }
@@ -116,15 +128,26 @@ namespace OutlookAiAssistant.Configuration
         private static AppSettings Normalize(AppSettings settings)
         {
             settings = settings ?? new AppSettings();
-            settings.ProviderId = string.IsNullOrWhiteSpace(settings.ProviderId)
-                ? "deepseek"
-                : settings.ProviderId.Trim();
-            settings.ApiBaseUrl = (settings.ApiBaseUrl ?? string.Empty).Trim();
-            settings.Model = (settings.Model ?? string.Empty).Trim();
+            string requestedProviderId = settings.ProviderId;
+            AiProviderPreset preset = AiProviderPreset.Find(settings.ProviderId);
+            settings.ProviderId = preset.Id;
+            settings.ApiBaseUrl = preset.BaseUrl;
+            settings.Model = preset.DefaultModel;
             settings.ApiKeyCiphertext = settings.ApiKeyCiphertext ?? string.Empty;
+            if (!string.Equals(
+                requestedProviderId,
+                preset.Id,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                settings.ApiKeyCiphertext = string.Empty;
+            }
             settings.SummaryLanguage = string.IsNullOrWhiteSpace(settings.SummaryLanguage)
                 ? "简体中文"
                 : settings.SummaryLanguage.Trim();
+            settings.IdentityEmailAddresses =
+                (settings.IdentityEmailAddresses ?? string.Empty).Trim();
+            settings.IdentityAliases =
+                (settings.IdentityAliases ?? string.Empty).Trim();
 
             if (settings.MaxEmailCharacters < 5000 || settings.MaxEmailCharacters > 200000)
             {
