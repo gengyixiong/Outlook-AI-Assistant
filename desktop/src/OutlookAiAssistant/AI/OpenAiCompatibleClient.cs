@@ -93,14 +93,6 @@ namespace OutlookAiAssistant.AI
                     "API 地址不能包含用户名、密码、查询参数或片段。");
             }
 
-            bool isLocalHttp = uri.Scheme == Uri.UriSchemeHttp
-                && (uri.Host == "localhost" || uri.Host == "127.0.0.1");
-            if (uri.Scheme != Uri.UriSchemeHttps && !isLocalHttp)
-            {
-                throw new InvalidOperationException(
-                    "远程 API 必须使用 HTTPS；只有 localhost / 127.0.0.1 可以使用 HTTP。");
-            }
-
             if (value.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
             {
                 return value;
@@ -163,7 +155,7 @@ namespace OutlookAiAssistant.AI
             request.ContentLength = body.Length;
             request.Timeout = 120000;
             request.ReadWriteTimeout = 120000;
-            request.UserAgent = "OutlookAiAssistant/0.4";
+            request.UserAgent = "OutlookAiAssistant/0.4.1";
 
             try
             {

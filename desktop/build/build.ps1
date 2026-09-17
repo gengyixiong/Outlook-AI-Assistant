@@ -215,7 +215,7 @@ if (-not $SkipPackage) {
   Copy-Item -LiteralPath (Join-Path $desktopRoot "..\docs\INSTALLATION.md") `
     -Destination $packageDocs
 
-  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.4.zip"
+  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.4.1.zip"
   if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
   }

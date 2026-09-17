@@ -127,5 +127,5 @@ API Key 使用 Windows DPAPI 的 `CurrentUser` 范围加密，存放于：
 
 ## 网络
 
-- 远程 Base URL 必须使用 HTTPS；localhost 和 127.0.0.1 可使用 HTTP。请求发送到配置的 OpenAI-compatible Chat Completions API。
+- Base URL 支持 HTTP 和 HTTPS；请求发送到配置的 OpenAI-compatible Chat Completions API。
 - 加载项没有遥测、自动更新或其他后台网络请求。

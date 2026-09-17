@@ -244,12 +244,10 @@ namespace OutlookAiAssistant.UnitTests
                 "https://open.bigmodel.cn/api/paas/v4/chat/completions",
                 OpenAiCompatibleClient.BuildChatCompletionsUrl(
                     "https://open.bigmodel.cn/api/paas/v4/chat/completions"));
-            Throws<InvalidOperationException>(
-                delegate
-                {
-                    OpenAiCompatibleClient.BuildChatCompletionsUrl(
-                        "http://example.com/v1");
-                });
+            Equal(
+                "http://example.com/v1/chat/completions",
+                OpenAiCompatibleClient.BuildChatCompletionsUrl(
+                    "http://example.com/v1"));
             Equal(
                 "http://localhost:1234/v1/chat/completions",
                 OpenAiCompatibleClient.BuildChatCompletionsUrl(

@@ -38,7 +38,7 @@ classic Outlook 用户级 COM 加载项。
 - C# Release 编译：通过。
 - COM 元数据 / RegAsm 解析：通过。
 - 单元测试：32/32 通过，包含通用配置往返、旧 DPAPI 密钥迁移、地址变更保护和本地 HTTP 请求/JSON 重试验证。
-- 发布包：`Outlook-AI-Assistant-v0.4.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.4.1.zip` 已生成。
 
 ## 历史版本真实 Outlook 验收结果
 
@@ -53,7 +53,7 @@ classic Outlook 用户级 COM 加载项。
 
 本次通用 API 改造尚未在真实 Outlook 中验收；新设置字段、默认值和实际 API 请求仍需手动验证。
 
-## 0.4 尚需真实 Outlook 与用户 API Key 验收
+## 0.4.1 尚需真实 Outlook 与用户 API Key 验收
 
 - 使用用户配置的 OpenAI-compatible 服务和 API Key 验证真实请求。
 - 验证 Executive Brief 四段结构、身份别名和“不需处理”的兜底文案。

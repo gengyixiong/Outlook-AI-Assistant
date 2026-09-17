@@ -11,7 +11,7 @@
 
 ## 安装
 
-1. 解压 `Outlook-AI-Assistant-v0.4.zip`。
+1. 解压 `Outlook-AI-Assistant-v0.4.1.zip`。
 2. 完全退出 Outlook，在任务管理器中确认没有 `OUTLOOK.EXE`。
 3. 双击 `Install.cmd`。
 4. 重新启动 classic Outlook。
@@ -32,8 +32,8 @@
 Reasoning Effort 可选 None、Medium 或 Max，对应 API 值 `none`、`medium` 和 `max`。
 
 Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 发送请求；
-如果已填写完整路径则不会重复追加。远程地址必须使用 HTTPS，localhost 和 127.0.0.1
-可使用 HTTP。修改服务地址后必须重新输入 API Key，旧密钥不会发送到新服务。
+如果已填写完整路径则不会重复追加。HTTP 和 HTTPS 地址都可以使用，适合通过 Tailscale
+访问内网服务。修改服务地址后必须重新输入 API Key，旧密钥不会发送到新服务。
 
 升级时会迁移旧版 `deepseek` 或 `zhipu` 设置，保留原有 Base URL、Model 和加密 API Key，
 并将 Reasoning Effort 设为 `none`；迁移后按普通 OpenAI-compatible 配置使用。
