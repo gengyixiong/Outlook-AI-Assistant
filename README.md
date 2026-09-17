@@ -90,7 +90,8 @@ AI 负责理解，Outlook 负责搜索。
 2. 完全退出 classic Outlook。
 3. 双击 `Install.cmd`。
 4. 重新启动 Outlook。
-5. 在右侧栏“设置”中选择 DeepSeek Flash 或 GLM-5.3 Flash，并填写对应 API Key。
+5. 在右侧栏“设置”中填写 OpenAI-compatible Base URL、API Key、Model 和 Reasoning Effort。
+   新安装默认使用 `https://api.openai.com/v1`、`gpt-5.6-luna` 和 `None`；模型可手动输入，Reasoning Effort 可选 None、Medium 或 Max。
 6. 如需联系人别名、公司或 Outlook 归类文件夹辅助搜索，在设置中点击“重建联系人索引”。
 
 安装不需要管理员权限。安装脚本会把插件复制到当前用户的 `%LOCALAPPDATA%\OutlookAiAssistant\app` 并写入当前用户注册表；安装完成后可以删除下载并解压的发布包目录。

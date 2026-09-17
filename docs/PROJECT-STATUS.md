@@ -1,6 +1,6 @@
 # 项目状态
 
-更新时间：2026-08-27
+更新时间：2026-09-17
 
 ## 当前路线
 
@@ -16,7 +16,7 @@ classic Outlook 用户级 COM 加载项。
 - 会话邮件跨文件夹读取、时间排序、EntryID 去重和 50 封上限取样。
 - Executive Brief 固定四段式输出，并结合 Outlook 当前身份、用户邮箱和称呼别名识别相关事项。
 - 历史邮件重复引用清理与总字符预算。
-- 仅开放 DeepSeek Flash 与 GLM-5.3 Flash，API 地址和模型固定不可编辑。
+- 支持通用 OpenAI-compatible Base URL、API Key、可编辑 Model 和 Reasoning Effort；新安装默认值为 `https://api.openai.com/v1`、`gpt-5.6-luna`、`none`。
 - Windows DPAPI API Key 加密。
 - 仅由设置页按钮触发的 Outlook 联系人发现和 Contact Index 重建。
 - 每个联系人最早 1 封、最近最多 3 封代表邮件取样，以及失败时旧索引保留。
@@ -37,10 +37,10 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - COM 元数据 / RegAsm 解析：通过。
-- 单元测试：29/29 通过。
-- 发布包：`Outlook-AI-Assistant-v0.3.0.zip` 已生成。
+- 单元测试：32/32 通过，包含通用配置往返、旧 DPAPI 密钥迁移、地址变更保护和本地 HTTP 请求/JSON 重试验证。
+- 发布包：`Outlook-AI-Assistant-v0.4.zip` 已生成。
 
-## 真实 Outlook 验收结果
+## 历史版本真实 Outlook 验收结果
 
 - 用户级安装与 COM 注册：通过。
 - classic Outlook 首次加载：通过。
@@ -51,9 +51,11 @@ classic Outlook 用户级 COM 加载项。
 - 旧版摘要按钮和隐私说明加载：通过。
 - 未选择邮件时保持“尚未读取邮件”且不自动发送请求：通过。
 
-## 0.3.0 尚需真实 Outlook 与用户 API Key 验收
+本次通用 API 改造尚未在真实 Outlook 中验收；新设置字段、默认值和实际 API 请求仍需手动验证。
 
-- 分别使用 DeepSeek Flash、GLM-5.3 Flash 测试 API Key 验证真实请求。
+## 0.4 尚需真实 Outlook 与用户 API Key 验收
+
+- 使用用户配置的 OpenAI-compatible 服务和 API Key 验证真实请求。
 - 验证 Executive Brief 四段结构、身份别名和“不需处理”的兜底文案。
 - 手动重建 Contact Index，检查候选取样、进度、备份和单联系人失败回退。
 - 验证 Outlook 自建邮件文件夹的相对路径和 Contact ID 关联。

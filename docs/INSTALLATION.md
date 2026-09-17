@@ -11,7 +11,7 @@
 
 ## 安装
 
-1. 解压 `Outlook-AI-Assistant-v0.3.0.zip`。
+1. 解压 `Outlook-AI-Assistant-v0.4.zip`。
 2. 完全退出 Outlook，在任务管理器中确认没有 `OUTLOOK.EXE`。
 3. 双击 `Install.cmd`。
 4. 重新启动 classic Outlook。
@@ -26,15 +26,17 @@
 
 ## 首次配置
 
-在侧栏“设置”页选择一个固定的低成本 Provider，并填写对应的 API Key：
+在侧栏“设置”页填写 OpenAI-compatible API 配置：Base URL、API Key、可编辑的 Model 和 Reasoning Effort。
 
-- DeepSeek Flash：固定使用 `https://api.deepseek.com` 和
-  `deepseek-v4-flash`。
-- GLM-5.3 Flash：固定使用 `https://open.bigmodel.cn/api/paas/v4` 和
-  `glm-5.3-flash`。
+新安装默认使用 `https://api.openai.com/v1`、`gpt-5.6-luna` 和 `none`。
+Reasoning Effort 可选 None、Medium 或 Max，对应 API 值 `none`、`medium` 和 `max`。
 
-API 地址和模型不可编辑。切换 Provider 后必须填写该 Provider 的 API Key，
-不会复用另一个 Provider 的密钥。
+Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 发送请求；
+如果已填写完整路径则不会重复追加。远程地址必须使用 HTTPS，localhost 和 127.0.0.1
+可使用 HTTP。修改服务地址后必须重新输入 API Key，旧密钥不会发送到新服务。
+
+升级时会迁移旧版 `deepseek` 或 `zhipu` 设置，保留原有 Base URL、Model 和加密 API Key，
+并将 Reasoning Effort 设为 `none`；迁移后按普通 OpenAI-compatible 配置使用。
 
 还可以配置当前用户的其他邮箱地址与称呼别名，帮助 Executive Brief
 识别与你相关的事项。
@@ -42,7 +44,7 @@ API 地址和模型不可编辑。切换 Provider 后必须填写该 Provider �
 联系人索引不会后台构建。只有点击“重建联系人索引”后，系统才扫描 Outlook
 联系人候选及左侧栏中的自建邮件文件夹。自建文件夹的相对路径会作为人工归类标签，
 并关联其中邮件在本地解析出的 Contact ID。每位候选最早 1 封、最近最多 3 封
-代表邮件的受限正文摘录会发送给当前 Provider 做结构化提取。生成结果保存在：
+代表邮件的受限正文摘录会发送给当前配置的 API 做结构化提取。生成结果保存在：
 
 ```text
 %LOCALAPPDATA%\OutlookAiAssistant\contact-index.json

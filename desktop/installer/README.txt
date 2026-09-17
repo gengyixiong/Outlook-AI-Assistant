@@ -1,4 +1,4 @@
-Outlook AI Assistant 0.3.0
+Outlook AI Assistant 0.4
 ==========================
 
 系统要求
@@ -13,7 +13,8 @@ Outlook AI Assistant 0.3.0
 2. 双击 Install.cmd。
 3. 不需要管理员权限。
 4. 重新启动 Outlook。
-5. 在右侧栏“设置”页选择 DeepSeek Flash 或 GLM-5.3 Flash，并填写对应 API Key。
+5. 在右侧栏“设置”页填写 OpenAI-compatible Base URL、API Key、Model 和 Reasoning Effort。
+   新安装默认使用 https://api.openai.com/v1、gpt-5.6-luna 和 None；模型可手动输入，Reasoning Effort 可选 None、Medium 或 Max。
 6. 如需联系人称呼搜索，可在设置中点击“重建联系人索引”；该操作不会后台运行。
 
 更新

@@ -1,37 +1,37 @@
 using System;
-using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
 using System.Windows.Forms;
 using OutlookAiAssistant.AddIn;
+using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
 using OutlookAiAssistant.EntityIndex;
 
 namespace OutlookAiAssistant.UI
 {
     /// <summary>
-    /// User settings for the two fixed-cost Flash providers, summary identity
-    /// and explicitly initiated Outlook contact-index rebuilds.
+    /// User-editable OpenAI-compatible settings, summary identity and
+    /// explicitly initiated Outlook contact-index rebuilds.
     /// </summary>
     public sealed class SettingsForm : Form
     {
         private readonly SettingsStore _settingsStore;
         private AppSettings _settings;
-        private readonly IList<AiProviderPreset> _presets;
         private readonly ContactIndexStore _contactIndexStore;
         private readonly ContactIndexService _contactIndexService;
-        private ComboBox _provider;
+        private TextBox _baseUrl;
         private TextBox _apiKey;
+        private ComboBox _model;
+        private ComboBox _reasoningEffort;
         private CheckBox _showApiKey;
         private CheckBox _clearApiKey;
         private ComboBox _language;
         private NumericUpDown _maximumCharacters;
         private TextBox _identityEmails;
         private TextBox _identityAliases;
-        private Label _providerHelp;
+        private Label _apiHelp;
         private Label _indexStatus;
         private Button _rebuildIndex;
-        private bool _loading;
 
         public AppSettings SavedSettings { get; private set; }
 
@@ -50,7 +50,6 @@ namespace OutlookAiAssistant.UI
         {
             _settingsStore = settingsStore;
             _settings = settings.Copy();
-            _presets = AiProviderPreset.CreateDefaults();
             _contactIndexStore = contactIndexStore;
             _contactIndexService = contactIndexService;
             Text = "AI 邮件助手设置";
@@ -77,22 +76,13 @@ namespace OutlookAiAssistant.UI
             root.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             root.Padding = new Padding(18);
             root.ColumnCount = 2;
-            root.RowCount = 11;
+            root.RowCount = 13;
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 155F));
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             scroll.Controls.Add(root);
 
-            _provider = CreateComboBox();
-            _provider.DisplayMember = "DisplayName";
-            for (int index = 0; index < _presets.Count; index++)
-            {
-                _provider.Items.Add(_presets[index]);
-            }
-            _provider.SelectedIndexChanged += ProviderSelectedIndexChanged;
-            AddRow(root, 0, "AI Provider", _provider);
-
-            _providerHelp = CreateNoteLabel();
-            root.Controls.Add(_providerHelp, 1, 1);
+            _baseUrl = CreateTextBox();
+            AddRow(root, 0, "Base URL", _baseUrl);
 
             TableLayoutPanel apiKeyPanel = new TableLayoutPanel();
             apiKeyPanel.Dock = DockStyle.Top;
@@ -118,18 +108,31 @@ namespace OutlookAiAssistant.UI
             keyOptions.Controls.Add(_showApiKey);
             keyOptions.Controls.Add(_clearApiKey);
             apiKeyPanel.Controls.Add(keyOptions);
-            AddRow(root, 2, "API Key", apiKeyPanel);
+            AddRow(root, 1, "API Key", apiKeyPanel);
 
             Label keyNote = CreateNoteLabel();
             keyNote.Text =
                 "留空表示继续使用已保存的密钥。密钥使用 Windows DPAPI 加密，"
-                + "不会在窗口中回显。模型由 Provider 固定，不能切换到 Pro。";
-            root.Controls.Add(keyNote, 1, 3);
+                + "不会在窗口中回显。更改服务地址后必须重新输入 API Key。";
+            root.Controls.Add(keyNote, 1, 2);
+
+            _model = CreateComboBox();
+            _model.DropDownStyle = ComboBoxStyle.DropDown;
+            _model.Items.Add("gpt-5.6-luna");
+            AddRow(root, 3, "Model", _model);
+
+            _reasoningEffort = CreateComboBox();
+            _reasoningEffort.Items.AddRange(new object[] { "None", "Medium", "Max" });
+            AddRow(root, 4, "Reasoning Effort", _reasoningEffort);
+
+            _apiHelp = CreateNoteLabel();
+            _apiHelp.Text = "支持 OpenAI-compatible Chat Completions API。模型名称可以手动输入。";
+            root.Controls.Add(_apiHelp, 1, 5);
 
             _language = CreateComboBox();
             _language.Items.AddRange(
                 new object[] { "简体中文", "English", "跟随邮件语言" });
-            AddRow(root, 4, "摘要语言", _language);
+            AddRow(root, 6, "摘要语言", _language);
 
             _maximumCharacters = new NumericUpDown();
             _maximumCharacters.Dock = DockStyle.Top;
@@ -137,18 +140,18 @@ namespace OutlookAiAssistant.UI
             _maximumCharacters.Maximum = 200000;
             _maximumCharacters.Increment = 5000;
             _maximumCharacters.ThousandsSeparator = true;
-            AddRow(root, 5, "正文字符上限", _maximumCharacters);
+            AddRow(root, 7, "正文字符上限", _maximumCharacters);
 
             _identityEmails = CreateMultilineTextBox(64);
-            AddRow(root, 6, "我的邮箱地址", _identityEmails);
+            AddRow(root, 8, "我的邮箱地址", _identityEmails);
 
             _identityAliases = CreateMultilineTextBox(82);
-            AddRow(root, 7, "别人对我的称呼", _identityAliases);
+            AddRow(root, 9, "别人对我的称呼", _identityAliases);
 
             _indexStatus = new Label();
             _indexStatus.AutoSize = true;
             _indexStatus.MaximumSize = new Size(520, 0);
-            AddRow(root, 8, "联系人索引", _indexStatus);
+            AddRow(root, 10, "联系人索引", _indexStatus);
 
             FlowLayoutPanel rebuildPanel = new FlowLayoutPanel();
             rebuildPanel.Dock = DockStyle.Top;
@@ -167,7 +170,7 @@ namespace OutlookAiAssistant.UI
                 + "每人最早 1 封和最近最多 3 封代表邮件的必要片段会发送给"
                 + "当前 AI；不会后台扫描。";
             rebuildPanel.Controls.Add(rebuildNote);
-            AddRow(root, 9, string.Empty, rebuildPanel);
+            AddRow(root, 11, string.Empty, rebuildPanel);
 
             FlowLayoutPanel buttons = new FlowLayoutPanel();
             buttons.Dock = DockStyle.Fill;
@@ -183,7 +186,7 @@ namespace OutlookAiAssistant.UI
             cancel.DialogResult = DialogResult.Cancel;
             buttons.Controls.Add(save);
             buttons.Controls.Add(cancel);
-            root.Controls.Add(buttons, 0, 10);
+            root.Controls.Add(buttons, 0, 12);
             root.SetColumnSpan(buttons, 2);
             AcceptButton = save;
             CancelButton = cancel;
@@ -191,60 +194,27 @@ namespace OutlookAiAssistant.UI
 
         private void LoadSettings()
         {
-            _loading = true;
-            try
-            {
-                int selectedIndex = 0;
-                for (int index = 0; index < _presets.Count; index++)
-                {
-                    if (string.Equals(
-                        _presets[index].Id,
-                        _settings.ProviderId,
-                        StringComparison.OrdinalIgnoreCase))
-                    {
-                        selectedIndex = index;
-                        break;
-                    }
-                }
-
-                if (_provider.Items.Count > 0)
-                {
-                    _provider.SelectedIndex = Math.Min(
-                        selectedIndex,
-                        _provider.Items.Count - 1);
-                }
-                _apiKey.Text = string.Empty;
-                _clearApiKey.Checked = false;
-                _language.Text = _settings.SummaryLanguage;
-                _maximumCharacters.Value = Math.Max(
-                    _maximumCharacters.Minimum,
-                    Math.Min(
-                        _maximumCharacters.Maximum,
-                        _settings.MaxEmailCharacters));
-                _identityEmails.Text = _settings.IdentityEmailAddresses;
-                _identityAliases.Text = _settings.IdentityAliases;
-                UpdateProviderHelp();
-            }
-            finally
-            {
-                _loading = false;
-            }
-        }
-
-        private void ProviderSelectedIndexChanged(object sender, EventArgs e)
-        {
-            if (!_loading)
-            {
-                UpdateProviderHelp();
-            }
-        }
-
-        private void UpdateProviderHelp()
-        {
-            AiProviderPreset preset = _provider.SelectedItem as AiProviderPreset;
-            _providerHelp.Text = preset == null
-                ? string.Empty
-                : preset.HelpText + "\r\n固定模型：" + preset.DefaultModel;
+            _baseUrl.Text = _settings.ApiBaseUrl;
+            _model.Text = _settings.Model;
+            _reasoningEffort.SelectedIndex = string.Equals(
+                _settings.ReasoningEffort,
+                "medium",
+                StringComparison.OrdinalIgnoreCase)
+                ? 1
+                : (string.Equals(
+                    _settings.ReasoningEffort,
+                    "max",
+                    StringComparison.OrdinalIgnoreCase) ? 2 : 0);
+            _apiKey.Text = string.Empty;
+            _clearApiKey.Checked = false;
+            _language.Text = _settings.SummaryLanguage;
+            _maximumCharacters.Value = Math.Max(
+                _maximumCharacters.Minimum,
+                Math.Min(
+                    _maximumCharacters.Maximum,
+                    _settings.MaxEmailCharacters));
+            _identityEmails.Text = _settings.IdentityEmailAddresses;
+            _identityAliases.Text = _settings.IdentityAliases;
         }
 
         private void SaveClicked(object sender, EventArgs e)
@@ -302,34 +272,32 @@ namespace OutlookAiAssistant.UI
         private bool TrySaveSettings(out AppSettings updated)
         {
             updated = null;
-            AiProviderPreset preset = _provider.SelectedItem as AiProviderPreset;
-            if (preset == null)
-            {
-                ShowValidation("请选择 AI Provider。");
-                return false;
-            }
-
-            bool hasStoredKey = _settingsStore.HasApiKey(_settings);
-            bool providerChanged = !string.Equals(
-                preset.Id,
-                _settings.ProviderId,
-                StringComparison.OrdinalIgnoreCase);
-            if ((!hasStoredKey || providerChanged)
-                && string.IsNullOrWhiteSpace(_apiKey.Text)
-                && !_clearApiKey.Checked)
-            {
-                ShowValidation(providerChanged
-                    ? "切换 Provider 后，请填写该 Provider 的 API Key。"
-                    : "请填写 API Key。");
-                return false;
-            }
-
             try
             {
                 updated = _settings.Copy();
-                updated.ProviderId = preset.Id;
-                updated.ApiBaseUrl = preset.BaseUrl;
-                updated.Model = preset.DefaultModel;
+                updated.ProviderId = string.Empty;
+                updated.ApiBaseUrl = (_baseUrl.Text ?? string.Empty).Trim();
+                updated.Model = (_model.Text ?? string.Empty).Trim();
+                updated.ReasoningEffort = _reasoningEffort.Text.ToLowerInvariant();
+                OpenAiCompatibleClient.BuildChatCompletionsUrl(updated.ApiBaseUrl);
+                if (string.IsNullOrWhiteSpace(updated.Model))
+                {
+                    ShowValidation("请填写 Model。");
+                    return false;
+                }
+
+                bool endpointChanged = !SettingsStore.IsSameApiEndpoint(
+                    _settings.ApiBaseUrl,
+                    updated.ApiBaseUrl);
+                if ((!_settingsStore.HasApiKey(_settings) || endpointChanged)
+                    && string.IsNullOrWhiteSpace(_apiKey.Text)
+                    && !_clearApiKey.Checked)
+                {
+                    ShowValidation(endpointChanged
+                        ? "更改服务地址后，请重新输入 API Key。"
+                        : "请填写 API Key。");
+                    return false;
+                }
                 updated.SummaryLanguage = string.IsNullOrWhiteSpace(_language.Text)
                     ? "简体中文"
                     : _language.Text.Trim();

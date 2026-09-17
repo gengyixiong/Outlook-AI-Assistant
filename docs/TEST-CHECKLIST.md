@@ -3,10 +3,13 @@
 ## 自动构建
 
 - [x] 编译 Release DLL。
-- [x] 生成 DeepSeek Flash 与 GLM-5.3 Flash 请求 URL。
-- [x] Provider 列表只包含两个固定 Flash 选项，不包含 Pro 模型。
-- [x] 设置保存时锁定 Provider 地址和模型，旧 Provider 不复用密钥。
-- [x] 设置窗口不提供 API 地址或模型编辑框。
+- [x] 生成配置 Base URL 的 `/chat/completions` 请求 URL。
+- [x] 设置窗口提供可编辑 Base URL 和 Model，以及 None、Medium、Max Reasoning Effort。
+- [x] 设置保存并保留用户输入的 Base URL、Model 和 Reasoning Effort。
+- [x] None、Medium、Max 持久化及无效 Reasoning Effort 回退到 `none`。
+- [x] 本地 HTTP 捕获验证 `reasoning_effort`、无 `thinking`，JSON 兼容重试保留档位。
+- [x] 旧 DeepSeek / 智谱配置与真实 DPAPI 密钥迁移后可读取。
+- [x] API Key 不以明文落盘，地址的主机、路径或端口变更阻止旧密钥读取和保存。
 - [x] 旧版 Windows 本地文件夹设置可安全读取，并在下次保存时移除。
 - [x] 解析 snake_case 搜索计划 JSON。
 - [x] 编译宽松、推荐和精确三档 AQS。
@@ -36,16 +39,18 @@
 - [x] 确认右侧出现“AI 邮件助手”。
 - [x] 确认 Home 功能区出现“显示助手”。
 - [x] 切换显示/隐藏侧栏。
-- [ ] 确认 0.3.0 侧栏显示“生成 Executive Brief”和新版隐私说明。
+- [ ] 确认 0.4 侧栏显示“生成 Executive Brief”和新版隐私说明。
 
 ## 设置
 
-- [x] 首次打开设置窗口，提供商列表正常初始化且不抛出异常。
-- [ ] 选择 DeepSeek Flash 并保存 API Key。
+- [x] 首次打开设置窗口，新配置字段正常初始化且不抛出异常。
+- [ ] 保存默认 Base URL、Model 和 None Reasoning Effort。
 - [ ] 重启 Outlook 后确认设置仍在。
 - [ ] 确认设置 JSON 中不存在明文 API Key。
-- [ ] 切换到 GLM-5.3 Flash 时要求填写新的 API Key。
-- [ ] 确认 API 地址和模型不可编辑。
+- [ ] 修改 Base URL 后确认必须重新输入 API Key，旧密钥不会发送到新服务。
+- [ ] 确认自定义 Base URL 和 Model 可保存并重新读取。
+- [ ] 确认 None、Medium、Max 分别持久化为 `none`、`medium`、`max`。
+- [ ] 确认请求包含 `reasoning_effort`，且不包含 DeepSeek 专用 `thinking`。
 - [ ] 保存当前用户的其他邮箱与称呼别名。
 - [ ] 确认设置中不再出现 Windows 本地文件夹选择器。
 

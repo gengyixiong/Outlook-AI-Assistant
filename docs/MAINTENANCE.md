@@ -2,17 +2,17 @@
 
 ## 常见修改位置
 
-### 更新固定 API 提供商
+### 更新 API 配置说明
 
 修改：
 
 ```text
-desktop/src/OutlookAiAssistant/Configuration/AiProviderPreset.cs
+desktop/src/OutlookAiAssistant/Configuration/AppSettings.cs
 ```
 
-产品只允许 DeepSeek Flash 与 GLM-5.3 Flash。Provider、HTTPS 地址和模型名
-属于一组固定白名单，不应在 UI 中开放地址或模型编辑。更新预设时必须同步更新
-`SettingsStore.Normalize` 行为、设置页、单元测试、安装文档和隐私披露。
+产品使用通用 OpenAI-compatible Base URL、API Key、可编辑 Model 和 Reasoning Effort。
+默认值为 `https://api.openai.com/v1`、`gpt-5.6-luna` 和 `none`。更新配置行为时必须同步更新
+`SettingsStore.Normalize`、设置页、单元测试、安装文档和隐私披露；本版本不实现模型自动获取。
 
 ### 修改摘要格式
 

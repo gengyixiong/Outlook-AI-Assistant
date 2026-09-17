@@ -105,6 +105,7 @@ API Key 使用 Windows DPAPI 的 `CurrentUser` 范围加密，存放于：
 - 不写入项目或安装目录。
 - 不写入日志。
 - 不在设置窗口中回显已保存的值。
+- 与保存时的 API 请求地址绑定；更改服务地址后必须重新输入，旧密钥不会自动发送到新服务。
 - 复制到另一台电脑后不能解密，需要重新填写。
 
 ## 日志
@@ -126,5 +127,5 @@ API Key 使用 Windows DPAPI 的 `CurrentUser` 范围加密，存放于：
 
 ## 网络
 
-- 两个固定 Flash Provider 均使用 HTTPS。
+- 远程 Base URL 必须使用 HTTPS；localhost 和 127.0.0.1 可使用 HTTP。请求发送到配置的 OpenAI-compatible Chat Completions API。
 - 加载项没有遥测、自动更新或其他后台网络请求。

@@ -6,10 +6,14 @@ namespace OutlookAiAssistant.Configuration
     /// </summary>
     public sealed class AppSettings
     {
+        // Retained only to migrate settings written by older releases.
         public string ProviderId { get; set; }
         public string ApiBaseUrl { get; set; }
         public string Model { get; set; }
+        public string ReasoningEffort { get; set; }
         public string ApiKeyCiphertext { get; set; }
+        // Chat Completions endpoint to which the saved key belongs.
+        public string ApiKeyBaseUrl { get; set; }
         public string SummaryLanguage { get; set; }
         public int MaxEmailCharacters { get; set; }
         public string IdentityEmailAddresses { get; set; }
@@ -17,10 +21,12 @@ namespace OutlookAiAssistant.Configuration
 
         public AppSettings()
         {
-            ProviderId = "deepseek";
-            ApiBaseUrl = "https://api.deepseek.com";
-            Model = "deepseek-v4-flash";
+            ProviderId = string.Empty;
+            ApiBaseUrl = "https://api.openai.com/v1";
+            Model = "gpt-5.6-luna";
+            ReasoningEffort = "none";
             ApiKeyCiphertext = string.Empty;
+            ApiKeyBaseUrl = string.Empty;
             SummaryLanguage = "简体中文";
             MaxEmailCharacters = 40000;
             IdentityEmailAddresses = string.Empty;
@@ -34,7 +40,9 @@ namespace OutlookAiAssistant.Configuration
                 ProviderId = ProviderId,
                 ApiBaseUrl = ApiBaseUrl,
                 Model = Model,
+                ReasoningEffort = ReasoningEffort,
                 ApiKeyCiphertext = ApiKeyCiphertext,
+                ApiKeyBaseUrl = ApiKeyBaseUrl,
                 SummaryLanguage = SummaryLanguage,
                 MaxEmailCharacters = MaxEmailCharacters,
                 IdentityEmailAddresses = IdentityEmailAddresses,

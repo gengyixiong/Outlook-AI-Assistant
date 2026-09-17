@@ -11,13 +11,13 @@ Outlook UI
        │              └─ ConversationSnapshot
        │                   ├─ 当前 EmailSnapshot（完整原文）
        │                   └─ 历史 EmailSnapshot（排序、去重、上限取样）
-       │              └─ Executive Brief Prompt → 配置的 Flash API
+       │              └─ Executive Brief Prompt → 配置的 OpenAI-compatible API
        ├─ 设置中的“重建联系人索引”按钮
        │    ├─ OutlookContactScanner → 轻量字段聚合 + 自建文件夹标签
-       │    ├─ 每人最早 1 + 最近 3 封代表邮件 → Flash API
+       │    ├─ 每人最早 1 + 最近 3 封代表邮件 → 配置的 OpenAI-compatible API
        │    └─ ContactIndexStore → contact-index.json
        └─ 搜索按钮
-            └─ 用户输入文字 + Contact Index → SearchPlannerService → Flash API
+            └─ 用户输入文字 + Contact Index → SearchPlannerService → 配置的 OpenAI-compatible API
                  └─ SearchPlanParser
                       └─ Contact ID 本地验证 + 附件/关键词条件
                            └─ AqsQueryCompiler
@@ -50,7 +50,7 @@ Outlook UI
 ### `UI`
 
 - `AssistantPaneControl.cs`：摘要、搜索、设置三个页面。
-- `SettingsForm.cs`：固定 Flash Provider、API Key、摘要身份和联系人索引
+- `SettingsForm.cs`：OpenAI-compatible Base URL、API Key、可编辑 Model、Reasoning Effort、摘要身份和联系人索引
   状态/手动重建。
 
 UI 只协调用户动作。可测试的转换逻辑必须留在服务层。
@@ -71,21 +71,21 @@ UI 只协调用户动作。可测试的转换逻辑必须留在服务层。
 
 - Bearer API Key
 - `model`
+- `reasoning_effort`（`none`、`medium` 或 `max`）
 - `messages`
 - 非流式响应
 - 搜索时优先请求 JSON mode；兼容服务不支持时回退一次
 
-正式 Provider 只有 DeepSeek Flash 和 GLM-5.3 Flash。地址和模型由
-`AiProviderPreset` 固定，业务服务不包含 Provider 分支。
+服务地址、模型和 Reasoning Effort 均来自用户设置。新安装默认使用
+`https://api.openai.com/v1`、`gpt-5.6-luna` 和 `none`；本版本不自动获取模型列表。
 
 ### `Configuration`
 
-- `AiProviderPreset.cs`：两个允许使用的 Flash Provider、固定地址和模型。
 - `SettingsStore.cs`：JSON 设置与 Windows DPAPI。
-- `AppSettings.cs`：持久化 Provider、加密密钥和摘要身份。
+- `AppSettings.cs`：持久化 Base URL、Model、Reasoning Effort、加密密钥和摘要身份。
 
-加载设置时会根据 Provider 重新覆盖地址和模型，因此手工编辑 JSON 也不能
-引入 Pro 模型或自定义接口。
+加载设置时会规范化并验证 Base URL、Model 和 Reasoning Effort，不会覆盖用户输入。
+旧版 `deepseek` 与 `zhipu` 设置会保留其地址、模型和加密 API Key，迁移后按普通兼容服务使用。
 
 ### `Summary`
 
@@ -102,7 +102,7 @@ UI 只协调用户动作。可测试的转换逻辑必须留在服务层。
 - `OutlookContactScanner.cs`：遍历 Classic Outlook 本地邮件，先按发件人邮箱
   聚合轻量字段，同时把自建邮件文件夹的相对路径及其中联系人记录为人工标签，
   再读取每人最早 1 封和最近最多 3 封代表邮件。
-- `ContactProfileExtractor.cs`：用当前 Flash Provider 提取公司、国家、城市、
+- `ContactProfileExtractor.cs`：用当前配置的 OpenAI-compatible API 提取公司、国家、城市、
   职位、业务关系和 aliases；邮箱与 Contact ID 始终由本地代码决定。
 - `ContactIndexStore.cs`：维护唯一正式 JSON、结构验证、旧索引备份和原子替换。
 - `ContactIndexService.cs`：仅响应设置按钮，串联上述步骤；不注册定时任务或

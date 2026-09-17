@@ -85,12 +85,20 @@ namespace OutlookAiAssistant.AI
                 throw new InvalidOperationException("API 地址格式无效。");
             }
 
+            if (!string.IsNullOrEmpty(uri.UserInfo)
+                || !string.IsNullOrEmpty(uri.Query)
+                || !string.IsNullOrEmpty(uri.Fragment))
+            {
+                throw new InvalidOperationException(
+                    "API 地址不能包含用户名、密码、查询参数或片段。");
+            }
+
             bool isLocalHttp = uri.Scheme == Uri.UriSchemeHttp
                 && (uri.Host == "localhost" || uri.Host == "127.0.0.1");
             if (uri.Scheme != Uri.UriSchemeHttps && !isLocalHttp)
             {
                 throw new InvalidOperationException(
-                    "远程 API 必须使用 HTTPS；只有 localhost 可以使用 HTTP。");
+                    "远程 API 必须使用 HTTPS；只有 localhost / 127.0.0.1 可以使用 HTTP。");
             }
 
             if (value.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
@@ -116,13 +124,14 @@ namespace OutlookAiAssistant.AI
             if (string.IsNullOrWhiteSpace(settings.Model))
             {
                 throw new InvalidOperationException(
-                    "AI Provider 配置无效，请重新打开设置。");
+                    "请先在设置中填写 Model。");
             }
 
             string endpoint = BuildChatCompletionsUrl(settings.ApiBaseUrl);
             Dictionary<string, object> payload = new Dictionary<string, object>();
             payload["model"] = settings.Model.Trim();
             payload["stream"] = false;
+            payload["reasoning_effort"] = settings.ReasoningEffort;
             payload["messages"] = new object[]
             {
                 new Dictionary<string, object>
@@ -145,19 +154,6 @@ namespace OutlookAiAssistant.AI
                 };
             }
 
-            // DeepSeek V4 enables thinking by default. These short tasks do
-            // not require chain-of-thought, so disable it to reduce latency/cost.
-            if (string.Equals(
-                settings.ProviderId,
-                "deepseek",
-                StringComparison.OrdinalIgnoreCase))
-            {
-                payload["thinking"] = new Dictionary<string, object>
-                {
-                    { "type", "disabled" }
-                };
-            }
-
             byte[] body = Encoding.UTF8.GetBytes(_serializer.Serialize(payload));
             HttpWebRequest request = (HttpWebRequest)WebRequest.Create(endpoint);
             request.Method = "POST";
@@ -167,7 +163,7 @@ namespace OutlookAiAssistant.AI
             request.ContentLength = body.Length;
             request.Timeout = 120000;
             request.ReadWriteTimeout = 120000;
-            request.UserAgent = "OutlookAiAssistant/0.3.0";
+            request.UserAgent = "OutlookAiAssistant/0.4";
 
             try
             {
@@ -195,7 +191,11 @@ namespace OutlookAiAssistant.AI
                     throw new AiHttpException(
                         statusCode,
                         "AI 服务请求失败：" + (int)statusCode + " "
-                            + statusDescription,
+                            + statusDescription
+                            + (statusCode == HttpStatusCode.BadRequest
+                                || (int)statusCode == 422
+                                ? "。当前模型或 API 服务可能不支持所选择的 Reasoning Effort。"
+                                : string.Empty),
                         ex);
                 }
 

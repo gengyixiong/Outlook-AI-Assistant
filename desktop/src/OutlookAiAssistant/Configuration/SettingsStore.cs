@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 using System.Web.Script.Serialization;
+using OutlookAiAssistant.AI;
 
 namespace OutlookAiAssistant.Configuration
 {
@@ -52,7 +54,17 @@ namespace OutlookAiAssistant.Configuration
             {
                 string json = File.ReadAllText(SettingsPath, Encoding.UTF8);
                 AppSettings settings = _serializer.Deserialize<AppSettings>(json);
-                return Normalize(settings);
+                Dictionary<string, object> rawSettings =
+                    _serializer.DeserializeObject(json) as Dictionary<string, object>;
+                bool legacySettings = IsLegacySettings(settings);
+                if (legacySettings)
+                {
+                    ApplyLegacyProviderDefaults(
+                        settings,
+                        HasJsonProperty(rawSettings, "ApiBaseUrl"),
+                        HasJsonProperty(rawSettings, "Model"));
+                }
+                return Normalize(settings, legacySettings);
             }
             catch
             {
@@ -69,7 +81,9 @@ namespace OutlookAiAssistant.Configuration
             }
 
             Directory.CreateDirectory(SettingsDirectory);
-            string json = _serializer.Serialize(Normalize(settings));
+            AppSettings normalized = Normalize(settings, false);
+            EnsureApiKeyMatchesEndpoint(normalized);
+            string json = _serializer.Serialize(normalized);
             string temporaryPath = SettingsPath + ".tmp";
             File.WriteAllText(temporaryPath, json, new UTF8Encoding(false));
 
@@ -96,6 +110,7 @@ namespace OutlookAiAssistant.Configuration
                 return string.Empty;
             }
 
+            EnsureApiKeyMatchesEndpoint(settings);
             byte[] cipher = Convert.FromBase64String(settings.ApiKeyCiphertext);
             byte[] plaintext = ProtectedData.Unprotect(
                 cipher,
@@ -114,32 +129,53 @@ namespace OutlookAiAssistant.Configuration
             if (string.IsNullOrWhiteSpace(apiKey))
             {
                 settings.ApiKeyCiphertext = string.Empty;
+                settings.ApiKeyBaseUrl = string.Empty;
                 return;
             }
 
+            string endpoint = OpenAiCompatibleClient.BuildChatCompletionsUrl(
+                settings.ApiBaseUrl);
             byte[] plaintext = Encoding.UTF8.GetBytes(apiKey.Trim());
             byte[] cipher = ProtectedData.Protect(
                 plaintext,
                 Entropy,
                 DataProtectionScope.CurrentUser);
             settings.ApiKeyCiphertext = Convert.ToBase64String(cipher);
+            settings.ApiKeyBaseUrl = endpoint;
         }
 
-        private static AppSettings Normalize(AppSettings settings)
+        public static bool IsSameApiEndpoint(string first, string second)
+        {
+            return string.Equals(
+                CanonicalEndpoint(first),
+                CanonicalEndpoint(second),
+                StringComparison.Ordinal);
+        }
+
+        private static AppSettings Normalize(AppSettings settings, bool legacySettings)
         {
             settings = settings ?? new AppSettings();
-            string requestedProviderId = settings.ProviderId;
-            AiProviderPreset preset = AiProviderPreset.Find(settings.ProviderId);
-            settings.ProviderId = preset.Id;
-            settings.ApiBaseUrl = preset.BaseUrl;
-            settings.Model = preset.DefaultModel;
-            settings.ApiKeyCiphertext = settings.ApiKeyCiphertext ?? string.Empty;
-            if (!string.Equals(
-                requestedProviderId,
-                preset.Id,
-                StringComparison.OrdinalIgnoreCase))
+            if (legacySettings)
             {
-                settings.ApiKeyCiphertext = string.Empty;
+                settings.ProviderId = string.Empty;
+            }
+
+            settings.ApiBaseUrl = (settings.ApiBaseUrl ?? string.Empty).Trim();
+            settings.Model = (settings.Model ?? string.Empty).Trim();
+            if (settings.Model.Length == 0)
+            {
+                throw new InvalidOperationException("模型不能为空。请在设置中输入模型名称。");
+            }
+
+            OpenAiCompatibleClient.BuildChatCompletionsUrl(settings.ApiBaseUrl);
+            settings.ReasoningEffort = NormalizeReasoningEffort(settings.ReasoningEffort);
+            settings.ApiKeyCiphertext = settings.ApiKeyCiphertext ?? string.Empty;
+            settings.ApiKeyBaseUrl = (settings.ApiKeyBaseUrl ?? string.Empty).Trim();
+            if (legacySettings && settings.ApiKeyCiphertext.Length > 0
+                && settings.ApiKeyBaseUrl.Length == 0)
+            {
+                settings.ApiKeyBaseUrl = OpenAiCompatibleClient.BuildChatCompletionsUrl(
+                    settings.ApiBaseUrl);
             }
             settings.SummaryLanguage = string.IsNullOrWhiteSpace(settings.SummaryLanguage)
                 ? "简体中文"
@@ -155,6 +191,86 @@ namespace OutlookAiAssistant.Configuration
             }
 
             return settings;
+        }
+
+        private static bool IsLegacySettings(AppSettings settings)
+        {
+            return settings != null
+                && (string.Equals(settings.ProviderId, "deepseek", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(settings.ProviderId, "zhipu", StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static bool HasJsonProperty(
+            Dictionary<string, object> settings,
+            string propertyName)
+        {
+            return settings != null && settings.ContainsKey(propertyName);
+        }
+
+        private static void ApplyLegacyProviderDefaults(
+            AppSettings settings,
+            bool hasBaseUrl,
+            bool hasModel)
+        {
+            if (string.Equals(settings.ProviderId, "zhipu", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!hasBaseUrl || string.IsNullOrWhiteSpace(settings.ApiBaseUrl))
+                {
+                    settings.ApiBaseUrl = "https://open.bigmodel.cn/api/paas/v4";
+                }
+
+                if (!hasModel || string.IsNullOrWhiteSpace(settings.Model))
+                {
+                    settings.Model = "glm-5.3-flash";
+                }
+            }
+            else if (string.Equals(settings.ProviderId, "deepseek", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!hasBaseUrl || string.IsNullOrWhiteSpace(settings.ApiBaseUrl))
+                {
+                    settings.ApiBaseUrl = "https://api.deepseek.com";
+                }
+
+                if (!hasModel || string.IsNullOrWhiteSpace(settings.Model))
+                {
+                    settings.Model = "deepseek-v4-flash";
+                }
+            }
+        }
+
+        private static string NormalizeReasoningEffort(string value)
+        {
+            value = (value ?? string.Empty).Trim().ToLowerInvariant();
+            return value == "medium" || value == "max" || value == "none"
+                ? value
+                : "none";
+        }
+
+        private static void EnsureApiKeyMatchesEndpoint(AppSettings settings)
+        {
+            if (settings == null || string.IsNullOrWhiteSpace(settings.ApiKeyCiphertext))
+            {
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(settings.ApiKeyBaseUrl)
+                || !IsSameApiEndpoint(settings.ApiKeyBaseUrl, settings.ApiBaseUrl))
+            {
+                throw new InvalidOperationException(
+                    "API 地址已修改，请重新输入 API Key 后再保存或使用。");
+            }
+        }
+
+        private static string CanonicalEndpoint(string baseUrl)
+        {
+            string endpoint = OpenAiCompatibleClient.BuildChatCompletionsUrl(baseUrl);
+            Uri uri = new Uri(endpoint, UriKind.Absolute);
+            string host = uri.Host.ToLowerInvariant();
+            bool defaultPort = (uri.Scheme == Uri.UriSchemeHttps && uri.Port == 443)
+                || (uri.Scheme == Uri.UriSchemeHttp && uri.Port == 80);
+            string port = defaultPort ? string.Empty : ":" + uri.Port;
+            string path = uri.AbsolutePath.TrimEnd('/');
+            return uri.Scheme.ToLowerInvariant() + "://" + host + port + path;
         }
     }
 }

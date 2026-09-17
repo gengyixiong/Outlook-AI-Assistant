@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Threading;
 using System.Windows.Forms;
 using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
@@ -31,16 +35,19 @@ namespace OutlookAiAssistant.UnitTests
             Run("Rejects empty plans", RejectsEmptyPlans);
             Run("Rejects invalid date ranges", RejectsInvalidDateRanges);
             Run("Strips markdown JSON fences", StripsMarkdownJsonFences);
-            Run("Builds provider URLs", BuildsProviderUrls);
+            Run("Builds compatible endpoint URLs", BuildsCompatibleEndpointUrls);
             Run("Builds settings dialog before first display", BuildsSettingsDialog);
             Run("Trims quoted history from stored messages", TrimsQuotedHistory);
             Run("Keeps ordinary From lines", KeepsOrdinaryFromLines);
             Run("Builds separate history and current prompt", BuildsConversationPrompt);
-            Run("Exposes only fixed Flash providers", ExposesOnlyFlashProviders);
-            Run("Locks provider endpoint and model", LocksProviderConfiguration);
+            Run("Uses generic configuration defaults", UsesGenericConfigurationDefaults);
+            Run("Round-trips generic configuration and efforts", RoundTripsGenericConfiguration);
+            Run("Migrates legacy provider configuration", MigratesLegacyProviderConfiguration);
+            Run("Protects API keys when endpoint changes", ProtectsApiKeysAcrossEndpointChanges);
+            Run("Sends reasoning effort without thinking", SendsReasoningEffortWithoutThinking);
             Run("Ignores legacy Windows folder setting", IgnoresLegacyFolderSetting);
             Run("Builds executive brief identity prompt", BuildsExecutiveBriefPrompt);
-            Run("Settings hide endpoint and model editors", SettingsHideModelEditors);
+            Run("Shows editable generic AI settings", ShowsEditableGenericSettings);
             Run("Round-trips contact index JSON", RoundTripsContactIndex);
             Run("Backs up contact index safely", BacksUpContactIndex);
             Run("Rejects malformed contact index", RejectsMalformedContactIndex);
@@ -227,7 +234,7 @@ namespace OutlookAiAssistant.UnitTests
             Equal("current_folder", plan.Scope);
         }
 
-        private static void BuildsProviderUrls()
+        private static void BuildsCompatibleEndpointUrls()
         {
             Equal(
                 "https://api.deepseek.com/chat/completions",
@@ -243,6 +250,20 @@ namespace OutlookAiAssistant.UnitTests
                     OpenAiCompatibleClient.BuildChatCompletionsUrl(
                         "http://example.com/v1");
                 });
+            Equal(
+                "http://localhost:1234/v1/chat/completions",
+                OpenAiCompatibleClient.BuildChatCompletionsUrl(
+                    "http://localhost:1234/v1/"));
+            Throws<InvalidOperationException>(delegate
+            {
+                OpenAiCompatibleClient.BuildChatCompletionsUrl(
+                    "https://example.com/v1?x=1");
+            });
+            Throws<InvalidOperationException>(delegate
+            {
+                OpenAiCompatibleClient.BuildChatCompletionsUrl(
+                    "https://user:pass@example.com/v1");
+            });
         }
 
         private static void BuildsSettingsDialog()
@@ -320,60 +341,174 @@ namespace OutlookAiAssistant.UnitTests
                 "current email must have a distinct section");
         }
 
-        private static void ExposesOnlyFlashProviders()
+        private static void UsesGenericConfigurationDefaults()
         {
-            IList<AiProviderPreset> providers =
-                AiProviderPreset.CreateDefaults();
-            Equal(2, providers.Count);
-            Equal("deepseek", providers[0].Id);
-            Equal("deepseek-v4-flash", providers[0].DefaultModel);
-            Equal("zhipu", providers[1].Id);
-            Equal("glm-5.3-flash", providers[1].DefaultModel);
-            True(
-                providers[0].DefaultModel.IndexOf(
-                    "pro",
-                    StringComparison.OrdinalIgnoreCase) < 0,
-                "DeepSeek preset must not expose Pro");
-            True(
-                providers[1].DefaultModel.IndexOf(
-                    "pro",
-                    StringComparison.OrdinalIgnoreCase) < 0,
-                "Zhipu preset must not expose Pro");
+            AppSettings settings = new AppSettings();
+            Equal("https://api.openai.com/v1", settings.ApiBaseUrl);
+            Equal("gpt-5.6-luna", settings.Model);
+            Equal("none", settings.ReasoningEffort);
+            Equal(string.Empty, settings.ApiKeyCiphertext);
         }
 
-        private static void LocksProviderConfiguration()
+        private static void RoundTripsGenericConfiguration()
         {
             string directory = CreateTemporaryDirectory();
             try
             {
                 SettingsStore store = new SettingsStore(directory);
                 AppSettings settings = new AppSettings();
-                settings.ProviderId = "openai";
-                settings.ApiBaseUrl = "https://example.com/v1";
-                settings.Model = "expensive-pro";
-                settings.ApiKeyCiphertext = "stale-key-ciphertext";
+                settings.ApiBaseUrl = " https://example.com/v1/ ";
+                settings.Model = " arbitrary-third-party-model ";
+                settings.ReasoningEffort = "MEDIUM";
                 settings.IdentityEmailAddresses = "other@example.com";
                 settings.IdentityAliases = "Ethan; 耿工";
+                store.SetApiKey(settings, " secret ");
                 store.Save(settings);
 
                 AppSettings loaded = store.Load();
-                Equal("deepseek", loaded.ProviderId);
-                Equal("https://api.deepseek.com", loaded.ApiBaseUrl);
-                Equal("deepseek-v4-flash", loaded.Model);
-                Equal(string.Empty, loaded.ApiKeyCiphertext);
+                Equal("https://example.com/v1/", loaded.ApiBaseUrl);
+                Equal("arbitrary-third-party-model", loaded.Model);
+                Equal("medium", loaded.ReasoningEffort);
+                Equal("secret", store.ReadApiKey(loaded));
+                True(!File.ReadAllText(store.SettingsPath).Contains("secret"),
+                    "plaintext key must not be persisted");
                 Equal("other@example.com", loaded.IdentityEmailAddresses);
                 Equal("Ethan; 耿工", loaded.IdentityAliases);
 
-                loaded.ProviderId = "zhipu";
-                loaded.Model = "glm-pro";
+                string[] efforts = { "none", "medium", "max" };
+                for (int i = 0; i < efforts.Length; i++)
+                {
+                    loaded.ReasoningEffort = efforts[i];
+                    store.Save(loaded);
+                    loaded = store.Load();
+                    Equal(efforts[i], loaded.ReasoningEffort);
+                }
+                loaded.ReasoningEffort = "invalid";
                 store.Save(loaded);
-                loaded = store.Load();
-                Equal("https://open.bigmodel.cn/api/paas/v4", loaded.ApiBaseUrl);
-                Equal("glm-5.3-flash", loaded.Model);
+                Equal("none", store.Load().ReasoningEffort);
             }
             finally
             {
                 DeleteTemporaryDirectory(directory);
+            }
+        }
+
+        private static void MigratesLegacyProviderConfiguration()
+        {
+            string directory = CreateTemporaryDirectory();
+            try
+            {
+                SettingsStore store = new SettingsStore(directory);
+                AppSettings source = new AppSettings();
+                source.ApiBaseUrl = "https://api.deepseek.com";
+                store.SetApiKey(source, "deep-key");
+                File.WriteAllText(store.SettingsPath,
+                    "{\"ProviderId\":\"deepseek\",\"ApiKeyCiphertext\":\""
+                        + source.ApiKeyCiphertext + "\"}");
+                AppSettings deepseek = store.Load();
+                Equal(string.Empty, deepseek.ProviderId);
+                Equal("https://api.deepseek.com", deepseek.ApiBaseUrl);
+                Equal("deepseek-v4-flash", deepseek.Model);
+                Equal("none", deepseek.ReasoningEffort);
+                Equal("deep-key", store.ReadApiKey(deepseek));
+                source.ApiBaseUrl = "https://custom.example/v1";
+                source.Model = "custom-zhipu-model";
+                store.SetApiKey(source, "zhipu-key");
+                File.WriteAllText(store.SettingsPath,
+                    "{\"ProviderId\":\"zhipu\",\"ApiBaseUrl\":\"https://custom.example/v1\",\"Model\":\"custom-zhipu-model\",\"ApiKeyCiphertext\":\""
+                        + source.ApiKeyCiphertext + "\"}");
+                AppSettings zhipu = store.Load();
+                Equal(string.Empty, zhipu.ProviderId);
+                Equal("https://custom.example/v1", zhipu.ApiBaseUrl);
+                Equal("custom-zhipu-model", zhipu.Model);
+                Equal("zhipu-key", store.ReadApiKey(zhipu));
+                Equal(source.ApiKeyCiphertext, zhipu.ApiKeyCiphertext);
+                store.Save(zhipu);
+                Equal("zhipu-key", store.ReadApiKey(store.Load()));
+            }
+            finally { DeleteTemporaryDirectory(directory); }
+        }
+
+        private static void ProtectsApiKeysAcrossEndpointChanges()
+        {
+            string directory = CreateTemporaryDirectory();
+            try
+            {
+                SettingsStore store = new SettingsStore(directory);
+                AppSettings settings = new AppSettings();
+                settings.ApiBaseUrl = "https://one.example/v1";
+                store.SetApiKey(settings, "secret");
+                Equal("secret", store.ReadApiKey(settings));
+                True(SettingsStore.IsSameApiEndpoint("https://one.example/v1", "https://one.example/v1/chat/completions"), "equivalent endpoints");
+                True(SettingsStore.IsSameApiEndpoint("https://ONE.example:443/v1/", settings.ApiBaseUrl),
+                    "host case, default port and trailing slash are equivalent");
+                store.Save(settings);
+                string[] changedUrls = { "https://two.example/v1", "https://one.example/v2",
+                    "https://one.example:444/v1", "https://one.example/V1" };
+                foreach (string url in changedUrls)
+                {
+                    settings.ApiBaseUrl = url;
+                    Throws<InvalidOperationException>(delegate { store.ReadApiKey(settings); });
+                    Throws<InvalidOperationException>(delegate { store.Save(settings); });
+                }
+                Equal("secret", store.ReadApiKey(store.Load()));
+                string originalJson = File.ReadAllText(store.SettingsPath);
+                File.WriteAllText(store.SettingsPath, originalJson.Replace(
+                    "\"ApiBaseUrl\":\"https://one.example/v1\"",
+                    "\"ApiBaseUrl\":\"https://two.example/v1\""));
+                Throws<InvalidOperationException>(delegate { store.ReadApiKey(store.Load()); });
+                store.SetApiKey(settings, "replacement");
+                store.Save(settings);
+                Equal("replacement", store.ReadApiKey(store.Load()));
+                store.SetApiKey(settings, string.Empty);
+                store.Save(settings);
+                Equal(string.Empty, store.ReadApiKey(store.Load()));
+            }
+            finally { DeleteTemporaryDirectory(directory); }
+        }
+
+        private static void SendsReasoningEffortWithoutThinking()
+        {
+            string[] efforts = { "none", "medium", "max" };
+            for (int i = 0; i < efforts.Length; i++)
+            {
+                using (CaptureServer server = new CaptureServer(1, false))
+                {
+                    AppSettings settings = new AppSettings();
+                    settings.ProviderId = "deepseek";
+                    settings.ApiBaseUrl = server.BaseUrl + "/v1";
+                    settings.Model = "gpt-5.6-luna";
+                    settings.ReasoningEffort = efforts[i];
+                    string response = new OpenAiCompatibleClient().CompleteAsync(
+                        settings, "key", "system", "user", false,
+                        CancellationToken.None).GetAwaiter().GetResult();
+                    Equal("ok", response);
+                    string body = server.WaitForBody();
+                    True(body.Contains("\"reasoning_effort\":\"" + efforts[i] + "\""),
+                        "reasoning effort must be sent");
+                    True(!body.Contains("thinking"), "DeepSeek thinking payload must be gone");
+                    True(body.Contains("\"model\":\"gpt-5.6-luna\""), "model must be sent");
+                    True(body.Contains("\"stream\":false"), "stream must be false");
+                    True(body.Contains("\"messages\":["), "messages must be sent");
+                }
+            }
+            using (CaptureServer retryServer = new CaptureServer(2, true))
+            {
+                AppSettings settings = new AppSettings();
+                settings.ProviderId = "deepseek";
+                settings.ApiBaseUrl = retryServer.BaseUrl;
+                settings.ReasoningEffort = "medium";
+                Equal("ok", new OpenAiCompatibleClient().CompleteAsync(
+                    settings, "key", "system", "user", true,
+                    CancellationToken.None).GetAwaiter().GetResult());
+                string retryBody = retryServer.WaitForBody();
+                True(retryBody.Contains("\"reasoning_effort\":\"medium\""),
+                    "JSON compatibility retry must preserve effort");
+                True(!retryBody.Contains("thinking"), "retry must not add thinking");
+                True(!retryBody.Contains("response_format"), "retry must remove JSON mode");
+                True(retryServer.FirstBody.Contains("response_format"), "initial request uses JSON mode");
+                True(retryServer.FirstBody.Contains("\"reasoning_effort\":\"medium\""),
+                    "initial request also preserves effort");
             }
         }
 
@@ -422,7 +557,7 @@ namespace OutlookAiAssistant.UnitTests
                     "{\"ProviderId\":\"zhipu\","
                         + "\"LocalFolderRoot\":\"C:\\\\OldReference\"}");
                 AppSettings loaded = store.Load();
-                Equal("zhipu", loaded.ProviderId);
+                Equal(string.Empty, loaded.ProviderId);
                 Equal("glm-5.3-flash", loaded.Model);
 
                 store.Save(loaded);
@@ -438,23 +573,62 @@ namespace OutlookAiAssistant.UnitTests
             }
         }
 
-        private static void SettingsHideModelEditors()
+        private static void ShowsEditableGenericSettings()
         {
-            using (SettingsForm form = new SettingsForm(
-                new SettingsStore(),
-                new AppSettings()))
+            using (SettingsForm form = new SettingsForm(new SettingsStore(), new AppSettings()))
             {
-                True(
-                    !ContainsControlText(form, "API 地址"),
-                    "API endpoint must not be editable");
-                True(
-                    !ContainsControlText(form, "模型 / 接入点 ID"),
-                    "model must not be editable");
-                True(
-                    !ContainsControlText(form, "本地参考文件夹")
-                        && !ContainsControlText(form, "选择文件夹"),
-                    "Windows folder picker must not remain");
+                TextBox baseUrl = (TextBox)GetPrivateField(form, "_baseUrl");
+                ComboBox model = (ComboBox)GetPrivateField(form, "_model");
+                ComboBox effort = (ComboBox)GetPrivateField(form, "_reasoningEffort");
+                TextBox apiKey = (TextBox)GetPrivateField(form, "_apiKey");
+                Equal("https://api.openai.com/v1", baseUrl.Text);
+                Equal(ComboBoxStyle.DropDown, model.DropDownStyle);
+                Equal("gpt-5.6-luna", model.Text);
+                Equal(3, effort.Items.Count);
+                Equal("None", effort.Text);
+                Equal(ComboBoxStyle.DropDownList, effort.DropDownStyle);
+                Equal(string.Empty, apiKey.Text);
+                True(apiKey.UseSystemPasswordChar, "new key entry must be masked");
+                True(!ContainsControlText(form, "AI Provider"), "provider selector removed");
             }
+            string directory = CreateTemporaryDirectory();
+            try
+            {
+                SettingsStore store = new SettingsStore(directory);
+                AppSettings settings = new AppSettings();
+                store.SetApiKey(settings, "previous-key");
+                using (SettingsForm form = new SettingsForm(store, settings))
+                {
+                    TextBox key = (TextBox)GetPrivateField(form, "_apiKey");
+                    Equal(string.Empty, key.Text);
+                    ((TextBox)GetPrivateField(form, "_baseUrl")).Text = "https://custom.example/v2";
+                    ((ComboBox)GetPrivateField(form, "_model")).Text = "arbitrary-model-id";
+                    ((ComboBox)GetPrivateField(form, "_reasoningEffort")).SelectedIndex = 1;
+                    key.Text = "new-key";
+                    object[] arguments = { null };
+                    object saved = typeof(SettingsForm).GetMethod("TrySaveSettings",
+                        System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+                        .Invoke(form, arguments);
+                    Equal(true, (bool)saved);
+                    AppSettings loaded = store.Load();
+                    Equal("https://custom.example/v2", loaded.ApiBaseUrl);
+                    Equal("arbitrary-model-id", loaded.Model);
+                    Equal("medium", loaded.ReasoningEffort);
+                    Equal("new-key", store.ReadApiKey(loaded));
+                    Equal(string.Empty, key.Text);
+                }
+            }
+            finally { DeleteTemporaryDirectory(directory); }
+        }
+
+        private static object GetPrivateField(object instance, string name)
+        {
+            System.Reflection.FieldInfo field = instance.GetType().GetField(
+                name,
+                System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic);
+            if (field == null) throw new Exception("Missing field " + name);
+            return field.GetValue(instance);
         }
 
         private static void RoundTripsContactIndex()
@@ -742,6 +916,92 @@ namespace OutlookAiAssistant.UnitTests
             if (Directory.Exists(path))
             {
                 Directory.Delete(path, true);
+            }
+        }
+
+        private sealed class CaptureServer : IDisposable
+        {
+            private readonly TcpListener _listener;
+            private readonly Thread _thread;
+            private readonly int _requests;
+            private readonly bool _badRequestFirst;
+            private readonly List<string> _bodies = new List<string>();
+            private Exception _error;
+
+            public string BaseUrl { get; private set; }
+            public string FirstBody { get { return _bodies[0]; } }
+
+            public CaptureServer(int requests, bool badRequestFirst)
+            {
+                _requests = requests;
+                _badRequestFirst = badRequestFirst;
+                _listener = new TcpListener(IPAddress.Loopback, 0);
+                _listener.Start();
+                int port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+                BaseUrl = "http://127.0.0.1:" + port;
+                _thread = new Thread(Serve);
+                _thread.IsBackground = true;
+                _thread.Start();
+            }
+
+            public string WaitForBody()
+            {
+                if (!_thread.Join(10000)) throw new Exception("local HTTP server timed out");
+                if (_error != null) throw new Exception("local HTTP server failed: " + _error.Message);
+                if (_bodies.Count == 0) throw new Exception("local HTTP server got no request");
+                return _bodies[_bodies.Count - 1];
+            }
+
+            private void Serve()
+            {
+                try
+                {
+                    for (int i = 0; i < _requests; i++)
+                    {
+                        using (TcpClient client = _listener.AcceptTcpClient())
+                        using (NetworkStream stream = client.GetStream())
+                        {
+                            stream.ReadTimeout = 5000;
+                            byte[] buffer = new byte[8192];
+                            int used = 0;
+                            int contentLength = 0;
+                            int headerEnd = -1;
+                            while (headerEnd < 0 || used - headerEnd - 4 < contentLength)
+                            {
+                                int read = stream.Read(buffer, used, buffer.Length - used);
+                                if (read == 0) break;
+                                used += read;
+                                string text = Encoding.UTF8.GetString(buffer, 0, used);
+                                headerEnd = text.IndexOf("\r\n\r\n", StringComparison.Ordinal);
+                                if (headerEnd >= 0)
+                                {
+                                    string marker = "Content-Length:";
+                                    int p = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+                                    if (p >= 0)
+                                    {
+                                        int lineEnd = text.IndexOf("\r\n", p, StringComparison.Ordinal);
+                                        contentLength = int.Parse(text.Substring(p + marker.Length, lineEnd - p - marker.Length).Trim());
+                                    }
+                                }
+                            }
+                            string requestText = Encoding.UTF8.GetString(buffer, 0, used);
+                            int bodyStart = requestText.IndexOf("\r\n\r\n", StringComparison.Ordinal) + 4;
+                            _bodies.Add(requestText.Substring(bodyStart));
+                            bool bad = _badRequestFirst && i == 0;
+                            string json = bad ? "{\"error\":{\"message\":\"reasoning unsupported\"}}" : "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}";
+                            string status = bad ? "400 Bad Request" : "200 OK";
+                            byte[] response = Encoding.UTF8.GetBytes("HTTP/1.1 " + status + "\r\nContent-Type: application/json\r\nContent-Length: " + Encoding.UTF8.GetByteCount(json) + "\r\nConnection: close\r\n\r\n" + json);
+                            stream.Write(response, 0, response.Length);
+                        }
+                    }
+                }
+                catch (Exception ex) { _error = ex; }
+            }
+
+            public void Dispose()
+            {
+                _listener.Stop();
+                if (_thread.IsAlive) _thread.Join(1000);
             }
         }
 

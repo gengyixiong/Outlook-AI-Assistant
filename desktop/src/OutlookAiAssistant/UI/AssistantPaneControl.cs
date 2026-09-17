@@ -33,7 +33,7 @@ namespace OutlookAiAssistant.UI
         private Button _preciseSearchButton;
         private RichTextBox _searchPlanOutput;
         private Label _status;
-        private Label _providerStatus;
+        private Label _configurationStatus;
         private SearchPlan _currentSearchPlan;
         private SearchQuerySet _currentSearchQueries;
         private bool _busy;
@@ -208,10 +208,10 @@ namespace OutlookAiAssistant.UI
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
 
-            _providerStatus = new Label();
-            _providerStatus.AutoSize = true;
-            _providerStatus.MaximumSize = new Size(350, 0);
-            layout.Controls.Add(_providerStatus);
+            _configurationStatus = new Label();
+            _configurationStatus.AutoSize = true;
+            _configurationStatus.MaximumSize = new Size(350, 0);
+            layout.Controls.Add(_configurationStatus);
 
             Button settingsButton = CreatePrimaryButton("打开 API 设置");
             settingsButton.Margin = new Padding(3, 12, 3, 12);
@@ -393,7 +393,7 @@ namespace OutlookAiAssistant.UI
 
             MessageBox.Show(
                 this,
-                "首次使用前，请先选择 AI Provider 并配置 API Key。",
+                "首次使用前，请先配置 Base URL、API Key 和 Model。",
                 "AI 邮件助手",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
@@ -407,15 +407,13 @@ namespace OutlookAiAssistant.UI
             Connect addIn = Connect.Current;
             if (addIn == null || addIn.Settings == null)
             {
-                _providerStatus.Text = "加载项正在初始化……";
+                _configurationStatus.Text = "加载项正在初始化……";
                 return;
             }
 
             AppSettings settings = addIn.Settings;
-            AiProviderPreset preset = AiProviderPreset.Find(
-                settings.ProviderId);
-            _providerStatus.Text =
-                "提供商：" + preset.DisplayName + "\r\n"
+            _configurationStatus.Text =
+                "模型：" + settings.Model + "\r\n"
                 + "API Key：" + (addIn.SettingsStore.HasApiKey(settings)
                     ? "已加密保存"
                     : "未配置");
