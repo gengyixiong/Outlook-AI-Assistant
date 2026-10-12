@@ -125,6 +125,18 @@ class ServiceState:
         self.index_busy = False
 
 
+def _model_is_cached(model) -> bool:
+    """Best-effort cache check that tolerates test doubles."""
+
+    checker = getattr(model, "is_cached", None)
+    if checker is None:
+        return False
+    try:
+        return bool(checker())
+    except Exception:
+        return False
+
+
 def create_app(
     settings: Optional[ServiceSettings] = None,
     token: Optional[str] = None,
@@ -166,6 +178,7 @@ def create_app(
             "model_available": state.model.available,
             "model_error": state.model.load_error,
             "device": settings.device,
+            "model_cached": _model_is_cached(state.model),
             "dtype": settings.dtype,
             "embedding_dim": settings.embedding_dim,
             "index_busy": state.index_busy,

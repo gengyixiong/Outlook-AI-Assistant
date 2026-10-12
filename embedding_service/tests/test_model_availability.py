@@ -95,3 +95,51 @@ def test_encoder_raises_when_not_loaded(tmp_path):
         model.encode_queries(["hello"])
     with pytest.raises(EmbeddingModelUnavailable):
         model.encode_documents(["hello"])
+
+
+def test_is_cached_is_offline_and_does_not_raise(tmp_path):
+    """is_cached must never touch the network and never raise.
+
+    A fresh machine has no cache; a machine that already downloaded the
+    model has one. Either way the call is a local check only.
+    """
+
+    from app.embedding_model import EmbeddingModel
+
+    model = EmbeddingModel("this/model/does/not/exist-xyz")
+    # Must return a bool, not raise, even for a bogus repo id.
+    assert model.is_cached() in (True, False)
+
+
+def test_load_prefers_offline_when_cached(monkeypatch):
+    """When the snapshot is cached, load must pass local_files_only=True.
+
+    This is what stops the service contacting Hugging Face on every start.
+    """
+
+    from app import embedding_model as mod
+
+    captured = {}
+
+    class FakeST:
+        def __init__(self, model_id, **kwargs):
+            captured["model_kwargs"] = kwargs.get("model_kwargs", {})
+
+    model = mod.EmbeddingModel("google/embeddinggemma-2")
+    # Pretend the snapshot is present and the runtime is importable.
+    monkeypatch.setattr(model, "is_cached", lambda: True)
+    monkeypatch.setattr(mod.EmbeddingModel, "_resolve_dtype",
+                        lambda self, torch: "float32")
+
+    import sys, types
+    fake_torch = types.ModuleType("torch")
+    fake_torch.float32 = "float32"
+    fake_torch.bfloat16 = "bfloat16"
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+
+    fake_st_module = types.ModuleType("sentence_transformers")
+    fake_st_module.SentenceTransformer = FakeST
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st_module)
+
+    assert model.load() is True
+    assert captured["model_kwargs"].get("local_files_only") is True

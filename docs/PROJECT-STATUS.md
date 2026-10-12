@@ -7,6 +7,17 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.6.4 改进：模型只下载一次，之后完全离线启动
+
+- 澄清：启动时看到的 `Fetching 15 files ... 0.00B` 是**本地缓存校验**，
+  不是重新下载；随后的几十秒是从磁盘加载 1.4 GB 权重，不是联网。
+- 优化：新增 `EmbeddingModel.is_cached()`，本地已缓存时以
+  `local_files_only=True` 加载，**启动不再访问 Hugging Face**，
+  断网也能正常启动。
+- 实测：在 `HF_HUB_OFFLINE=1` 下启动成功，日志显示 `[offline, from cache]`。
+- `/health` 新增 `model_cached` 字段；C# 端解析。
+- 新增 2 个测试，并验证移除离线逻辑时测试会失败。
+
 ## 0.6.3 改进：卡片双击打开、目录按钮、使用说明
 
 - 结果卡片去除“打开邮件”和“Outlook 搜索”按钮，改为**双击整张卡片**打开
@@ -177,7 +188,7 @@ classic Outlook 用户级 COM 加载项。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.6.3.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.6.4.zip` 已生成。
 
 ## 尚需用户手动验收
 

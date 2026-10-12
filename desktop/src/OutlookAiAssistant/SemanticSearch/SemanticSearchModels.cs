@@ -109,6 +109,8 @@ namespace OutlookAiAssistant.SemanticSearch
         public string Status { get; set; }
         public string ModelId { get; set; }
         public bool ModelAvailable { get; set; }
+        /// <summary>True when the model files are already cached locally.</summary>
+        public bool ModelCached { get; set; }
         public string ModelError { get; set; }
         public string Device { get; set; }
         public int MailCount { get; set; }

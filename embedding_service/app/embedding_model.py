@@ -147,8 +147,32 @@ class EmbeddingModel:
     def load_error(self) -> Optional[str]:
         return self._load_error
 
-    def load(self) -> bool:
-        """Load the model. Returns False when the runtime is missing."""
+    def is_cached(self) -> bool:
+        """True when the model snapshot is already present on this machine.
+
+        This performs no network access, so the service can decide to load
+        fully offline without waiting on Hugging Face.
+        """
+
+        try:
+            from huggingface_hub import snapshot_download
+        except Exception:  # pragma: no cover
+            return False
+        try:
+            snapshot_download(repo_id=self.model_id, local_files_only=True)
+            return True
+        except Exception:
+            return False
+
+    def load(self, offline_if_cached: bool = True) -> bool:
+        """Load the model. Returns False when the runtime is missing.
+
+        When the snapshot is already cached, the model is loaded with
+        ``local_files_only`` so startup never contacts the network. This
+        avoids a Hugging Face round-trip on every start and lets the service
+        come up on a machine with no internet, as long as the model was
+        downloaded once.
+        """
 
         with self._lock:
             if self._model is not None:
@@ -165,6 +189,12 @@ class EmbeddingModel:
 
             try:
                 resolved_dtype = self._resolve_dtype(torch)
+                local_only = bool(offline_if_cached and self.is_cached())
+                model_kwargs = {"dtype": resolved_dtype}
+                if local_only:
+                    # Never touch the network when the files are already here.
+                    model_kwargs["local_files_only"] = True
+
                 # Disable the vision and audio encoders: this service only
                 # embeds text. config_kwargs is the officially documented way
                 # to skip those modules (270M vs 740M parameters).
@@ -175,12 +205,13 @@ class EmbeddingModel:
                         "vision_config": None,
                         "audio_config": None,
                     },
-                    model_kwargs={"dtype": resolved_dtype},
+                    model_kwargs=model_kwargs,
                 )
                 self._load_error = None
                 logger.info(
-                    "Loaded embedding model %s on %s (%s)",
+                    "Loaded embedding model %s on %s (%s)%s",
                     self.model_id, self.device, resolved_dtype,
+                    " [offline, from cache]" if local_only else "",
                 )
                 return True
             except Exception as ex:  # pragma: no cover - environment dependent

@@ -146,6 +146,7 @@ namespace OutlookAiAssistant.SemanticSearch
                 status.Status = GetString(root, "status");
                 status.ModelId = GetString(root, "model_id");
                 status.ModelAvailable = GetBool(root, "model_available");
+                status.ModelCached = GetBool(root, "model_cached");
                 status.ModelError = GetString(root, "model_error");
                 status.Device = GetString(root, "device");
                 if (index != null)
