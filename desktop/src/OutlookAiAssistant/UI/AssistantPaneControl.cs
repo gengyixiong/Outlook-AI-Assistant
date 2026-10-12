@@ -9,7 +9,6 @@ using OutlookAiAssistant.Configuration;
 using OutlookAiAssistant.Diagnostics;
 using OutlookAiAssistant.Models;
 using OutlookAiAssistant.OutlookIntegration;
-using OutlookAiAssistant.Search;
 using OutlookAiAssistant.SemanticSearch;
 
 namespace OutlookAiAssistant.UI
@@ -28,16 +27,8 @@ namespace OutlookAiAssistant.UI
         private Label _mailInfo;
         private RichTextBox _summaryOutput;
         private Button _copySummaryButton;
-        private TextBox _searchInput;
-        private Button _searchButton;
-        private Button _broadSearchButton;
-        private Button _recommendedSearchButton;
-        private Button _preciseSearchButton;
-        private RichTextBox _searchPlanOutput;
         private Label _status;
         private Label _configurationStatus;
-        private SearchPlan _currentSearchPlan;
-        private SearchQuerySet _currentSearchQueries;
         private bool _busy;
 
         // Semantic search page.
@@ -46,7 +37,9 @@ namespace OutlookAiAssistant.UI
         private Button _semanticIndexButton;
         private Button _semanticStopButton;
         private Button _semanticDownloadModelButton;
+        private Button _semanticStartServiceButton;
         private Button _openServiceButton;
+        private Label _semanticServiceStatus;
         private Label _semanticIndexStatus;
         private FlowLayoutPanel _semanticResultsPanel;
         private Label _semanticStatus;
@@ -80,7 +73,6 @@ namespace OutlookAiAssistant.UI
             tabs.Dock = DockStyle.Fill;
             tabs.Margin = new Padding(10, 8, 10, 4);
             tabs.TabPages.Add(BuildSummaryPage());
-            tabs.TabPages.Add(BuildSearchPage());
             tabs.TabPages.Add(BuildSemanticSearchPage());
             tabs.TabPages.Add(BuildSettingsPage());
             root.Controls.Add(tabs);
@@ -143,79 +135,6 @@ namespace OutlookAiAssistant.UI
             return page;
         }
 
-        private TabPage BuildSearchPage()
-        {
-            TabPage page = new TabPage("智能搜索");
-            page.Padding = new Padding(10);
-            TableLayoutPanel layout = new TableLayoutPanel();
-            layout.Dock = DockStyle.Fill;
-            layout.ColumnCount = 1;
-            layout.RowCount = 5;
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-
-            Label prompt = new Label();
-            prompt.Text =
-                "描述你要找的邮件，例如：\r\n"
-                + "找 Richard 上个月发给我的、关于 Malaysia 报价且带附件的邮件";
-            prompt.AutoSize = true;
-            prompt.MaximumSize = new Size(350, 0);
-            layout.Controls.Add(prompt);
-
-            _searchInput = new TextBox();
-            _searchInput.Multiline = true;
-            _searchInput.ScrollBars = ScrollBars.Vertical;
-            _searchInput.Height = 78;
-            _searchInput.Dock = DockStyle.Top;
-            _searchInput.Margin = new Padding(3, 8, 3, 8);
-            layout.Controls.Add(_searchInput);
-
-            _searchButton = CreatePrimaryButton("解析并执行宽松搜索");
-            _searchButton.Click += SearchClicked;
-            layout.Controls.Add(_searchButton);
-
-            FlowLayoutPanel levels = new FlowLayoutPanel();
-            levels.AutoSize = true;
-            levels.Dock = DockStyle.Top;
-            levels.WrapContents = true;
-            levels.Margin = new Padding(0, 8, 0, 0);
-
-            _broadSearchButton = CreateSearchLevelButton("宽松");
-            _broadSearchButton.Click += delegate
-            {
-                SearchLevelClicked(SearchStrictness.Broad);
-            };
-            levels.Controls.Add(_broadSearchButton);
-
-            _recommendedSearchButton = CreateSearchLevelButton("推荐");
-            _recommendedSearchButton.Click += delegate
-            {
-                SearchLevelClicked(SearchStrictness.Recommended);
-            };
-            levels.Controls.Add(_recommendedSearchButton);
-
-            _preciseSearchButton = CreateSearchLevelButton("精确");
-            _preciseSearchButton.Click += delegate
-            {
-                SearchLevelClicked(SearchStrictness.Precise);
-            };
-            levels.Controls.Add(_preciseSearchButton);
-            layout.Controls.Add(levels);
-
-            _searchPlanOutput = new RichTextBox();
-            _searchPlanOutput.Dock = DockStyle.Fill;
-            _searchPlanOutput.ReadOnly = true;
-            _searchPlanOutput.BackColor = Color.White;
-            _searchPlanOutput.BorderStyle = BorderStyle.FixedSingle;
-            _searchPlanOutput.Margin = new Padding(3, 10, 3, 3);
-            layout.Controls.Add(_searchPlanOutput);
-            page.Controls.Add(layout);
-            return page;
-        }
-
         private TabPage BuildSemanticSearchPage()
         {
             TabPage page = new TabPage("语义搜索");
@@ -223,7 +142,8 @@ namespace OutlookAiAssistant.UI
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
             layout.ColumnCount = 1;
-            layout.RowCount = 7;
+            layout.RowCount = 8;
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -231,6 +151,14 @@ namespace OutlookAiAssistant.UI
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+            // Service + model + index status, always visible at the top.
+            _semanticServiceStatus = new Label();
+            _semanticServiceStatus.AutoSize = true;
+            _semanticServiceStatus.MaximumSize = new Size(350, 0);
+            _semanticServiceStatus.Font = new Font(Font, FontStyle.Bold);
+            _semanticServiceStatus.Text = "服务状态：正在检查…";
+            layout.Controls.Add(_semanticServiceStatus);
 
             Label prompt = new Label();
             prompt.Text =
@@ -275,6 +203,14 @@ namespace OutlookAiAssistant.UI
             _semanticStopButton.Click += SemanticStopClicked;
             actions.Controls.Add(_semanticStopButton);
 
+            _semanticStartServiceButton = new Button();
+            _semanticStartServiceButton.Text = "启动服务";
+            _semanticStartServiceButton.AutoSize = true;
+            _semanticStartServiceButton.MinimumSize = new Size(88, 29);
+            _semanticStartServiceButton.Margin = new Padding(3, 0, 3, 3);
+            _semanticStartServiceButton.Click += SemanticStartServiceClicked;
+            actions.Controls.Add(_semanticStartServiceButton);
+
             _semanticDownloadModelButton = new Button();
             _semanticDownloadModelButton.Text = "下载模型";
             _semanticDownloadModelButton.AutoSize = true;
@@ -284,9 +220,9 @@ namespace OutlookAiAssistant.UI
             actions.Controls.Add(_semanticDownloadModelButton);
 
             _openServiceButton = new Button();
-            _openServiceButton.Text = "检查本地服务";
+            _openServiceButton.Text = "刷新状态";
             _openServiceButton.AutoSize = true;
-            _openServiceButton.MinimumSize = new Size(110, 29);
+            _openServiceButton.MinimumSize = new Size(88, 29);
             _openServiceButton.Margin = new Padding(3, 0, 3, 3);
             _openServiceButton.Click += CheckServiceClicked;
             actions.Controls.Add(_openServiceButton);
@@ -405,87 +341,6 @@ namespace OutlookAiAssistant.UI
             {
                 SetBusy(false, null);
             }
-        }
-
-        private async void SearchClicked(object sender, EventArgs e)
-        {
-            if (_busy || !EnsureConfigured())
-            {
-                return;
-            }
-
-            string description = _searchInput.Text.Trim();
-            if (description.Length == 0)
-            {
-                MessageBox.Show(
-                    this,
-                    "请先输入你要查找的邮件描述。",
-                    "AI 邮件助手",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
-                return;
-            }
-
-            SetBusy(true, "正在把描述转换成搜索条件……");
-            try
-            {
-                Connect addIn = RequireAddIn();
-                // Only the description string is sent to the configured AI service.
-                SearchPlan plan = await addIn.SearchPlanner.CreatePlanAsync(
-                    description,
-                    addIn.Settings,
-                    CancellationToken.None);
-                _currentSearchPlan = plan;
-                _currentSearchQueries = addIn.QueryCompiler.CompileAll(plan);
-                ExecuteSearchLevel(SearchStrictness.Broad);
-            }
-            catch (Exception ex)
-            {
-                ShowError("搜索失败", ex);
-            }
-            finally
-            {
-                SetBusy(false, null);
-            }
-        }
-
-        private void SearchLevelClicked(SearchStrictness strictness)
-        {
-            if (_busy
-                || _currentSearchPlan == null
-                || _currentSearchQueries == null)
-            {
-                return;
-            }
-
-            SetBusy(true, "正在切换 Outlook 搜索范围……");
-            try
-            {
-                ExecuteSearchLevel(strictness);
-            }
-            catch (Exception ex)
-            {
-                ShowError("搜索失败", ex);
-            }
-            finally
-            {
-                SetBusy(false, null);
-            }
-        }
-
-        private void ExecuteSearchLevel(SearchStrictness strictness)
-        {
-            Connect addIn = RequireAddIn();
-            string aqs = _currentSearchQueries.Get(strictness);
-            _searchPlanOutput.Text = addIn.SearchPlanFormatter.Format(
-                _currentSearchPlan,
-                _currentSearchQueries,
-                strictness);
-            SetStatus("正在调用 Outlook 本地搜索……");
-            addIn.OutlookSearch.Search(aqs, _currentSearchPlan.Scope);
-            SetStatus(
-                FormatStrictness(strictness)
-                    + "条件已交给 Outlook，本地结果已显示。");
         }
 
         private async void SemanticSearchClicked(object sender, EventArgs e)
@@ -933,12 +788,72 @@ namespace OutlookAiAssistant.UI
         private void CheckServiceClicked(object sender, EventArgs e)
         {
             RefreshSemanticIndexStatus();
-            MessageBox.Show(
-                this,
-                _semanticIndexStatus.Text,
-                "本地语义搜索服务",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+        }
+
+        private async void SemanticStartServiceClicked(object sender, EventArgs e)
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || _semanticBusy)
+            {
+                return;
+            }
+
+            if (addIn.SemanticServiceLauncher.IsRunning())
+            {
+                RefreshSemanticIndexStatus();
+                SetStatus("本地语义搜索服务已在运行。");
+                return;
+            }
+
+            if (!SemanticServiceLauncher.IsInstalled())
+            {
+                MessageBox.Show(
+                    this,
+                    "尚未安装本地语义搜索服务。\r\n\r\n"
+                    + "请先解压发布包，在 embedding_service 目录中运行 "
+                    + "install-service.cmd 完成安装，然后回到这里点击“启动服务”。",
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            string startError = addIn.SemanticServiceLauncher.Start();
+            if (!string.IsNullOrWhiteSpace(startError))
+            {
+                MessageBox.Show(
+                    this,
+                    startError,
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            // The service needs a few seconds to import PyTorch. Poll briefly
+            // so the status label reflects reality instead of staying "stopped".
+            _semanticServiceStatus.Text = "服务状态：正在启动…";
+            SetStatus("正在启动本地语义搜索服务…");
+            SetSemanticBusy(true, null);
+            try
+            {
+                for (int attempt = 0; attempt < 30; attempt++)
+                {
+                    await Task.Delay(1000);
+                    if (addIn.SemanticClient.GetStatus().Reachable)
+                    {
+                        SetStatus("本地语义搜索服务已启动。");
+                        return;
+                    }
+                }
+
+                SetStatus("服务启动较慢或失败，请查看弹出的服务窗口。");
+            }
+            finally
+            {
+                SetSemanticBusy(false, null);
+                RefreshSemanticIndexStatus();
+            }
         }
 
         private void RefreshSemanticIndexStatus()
@@ -946,41 +861,51 @@ namespace OutlookAiAssistant.UI
             Connect addIn = Connect.Current;
             if (addIn == null)
             {
-                _semanticIndexStatus.Text = "索引状态：加载项正在初始化。";
-                return;
-            }
-
-            if (!addIn.SemanticClient.GetStatus().Reachable)
-            {
-                _semanticIndexStatus.Text =
-                    "索引状态：本地语义服务未运行。\r\n"
-                    + "请先启动 embedding_service（setup-venv.cmd / "
-                    + "start-service.cmd），或继续使用 Outlook 原生搜索。";
+                _semanticServiceStatus.Text = "服务状态：加载项正在初始化…";
+                _semanticIndexStatus.Text = string.Empty;
                 return;
             }
 
             SemanticServiceStatus status = addIn.SemanticClient.GetStatus();
-            if (!status.ModelAvailable)
+            if (!status.Reachable)
             {
-                _semanticIndexStatus.Text =
-                    "索引状态：服务已运行，但本地语义模型尚未就绪。\r\n"
-                    + "请点击“下载模型”完成一次下载（之后可离线使用）。\r\n"
-                    + (string.IsNullOrWhiteSpace(status.ModelError)
-                        ? string.Empty
-                        : "原因：" + status.ModelError);
+                bool installed = SemanticServiceLauncher.IsInstalled();
+                _semanticServiceStatus.Text = installed
+                    ? "服务状态：未运行"
+                    : "服务状态：未安装";
+                _semanticServiceStatus.ForeColor = Color.FromArgb(176, 0, 32);
+                _semanticIndexStatus.Text = installed
+                    ? "点击“启动服务”即可开始，然后建立索引。"
+                    : "请先在 embedding_service 目录运行 install-service.cmd。";
+                _semanticIndexStatus.ForeColor = Color.FromArgb(176, 0, 32);
                 return;
             }
 
+            if (!status.ModelAvailable)
+            {
+                _semanticServiceStatus.Text = "服务状态：运行中；模型未就绪";
+                _semanticServiceStatus.ForeColor = Color.FromArgb(176, 96, 0);
+                _semanticIndexStatus.Text =
+                    "点击“下载模型”完成一次下载（需要联网，之后可离线使用）。"
+                    + (string.IsNullOrWhiteSpace(status.ModelError)
+                        ? string.Empty
+                        : "\r\n原因：" + status.ModelError);
+                _semanticIndexStatus.ForeColor = Color.FromArgb(176, 96, 0);
+                return;
+            }
+
+            _semanticServiceStatus.Text = "服务状态：运行中；模型就绪"
+                + "（" + status.Device + "）";
+            _semanticServiceStatus.ForeColor = Color.FromArgb(0, 120, 60);
             _semanticIndexStatus.Text =
-                "索引状态：已索引 " + status.MailCount + " 封邮件，"
+                "索引：已索引 " + status.MailCount + " 封邮件，"
                 + status.ChunkCount + " 个片段（"
-                + status.EmbeddedChunkCount + " 个已向量化）。\r\n"
-                + "模型：" + status.ModelId + "（就绪）"
-                + "，设备：" + status.Device
-                + "，占用：" + FormatSize(status.SizeBytes)
+                + status.EmbeddedChunkCount + " 个已向量化），占用 "
+                + FormatSize(status.SizeBytes)
                 + (string.IsNullOrWhiteSpace(status.LastSyncAt)
                     ? string.Empty
                     : "\r\n上次同步：" + status.LastSyncAt);
+            _semanticIndexStatus.ForeColor = Color.DimGray;
         }
 
         private void SetSemanticBusy(bool busy, string status)
@@ -989,6 +914,7 @@ namespace OutlookAiAssistant.UI
             _semanticSearchButton.Enabled = !busy;
             _semanticIndexButton.Enabled = !busy;
             _semanticDownloadModelButton.Enabled = !busy;
+            _semanticStartServiceButton.Enabled = !busy;
             _openServiceButton.Enabled = !busy;
             if (!busy)
             {
@@ -1114,11 +1040,6 @@ namespace OutlookAiAssistant.UI
         {
             _busy = busy;
             _summarizeButton.Enabled = !busy;
-            _searchButton.Enabled = !busy;
-            bool canReuseSearch = !busy && _currentSearchQueries != null;
-            _broadSearchButton.Enabled = canReuseSearch;
-            _recommendedSearchButton.Enabled = canReuseSearch;
-            _preciseSearchButton.Enabled = canReuseSearch;
             if (!string.IsNullOrWhiteSpace(status))
             {
                 SetStatus(status);
@@ -1165,31 +1086,7 @@ namespace OutlookAiAssistant.UI
             return button;
         }
 
-        private static Button CreateSearchLevelButton(string text)
-        {
-            Button button = new Button();
-            button.Text = text;
-            button.AutoSize = true;
-            button.MinimumSize = new Size(88, 29);
-            button.Enabled = false;
-            button.Margin = new Padding(3, 0, 3, 3);
-            return button;
-        }
 
-        private static string FormatStrictness(SearchStrictness strictness)
-        {
-            switch (strictness)
-            {
-                case SearchStrictness.Broad:
-                    return "宽松搜索";
-                case SearchStrictness.Recommended:
-                    return "推荐搜索";
-                case SearchStrictness.Precise:
-                    return "精确搜索";
-                default:
-                    return "搜索";
-            }
-        }
 
         private static string DisplaySubject(string subject)
         {

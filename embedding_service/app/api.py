@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -170,6 +171,16 @@ def create_app(
             "index_busy": state.index_busy,
             "index": stats,
             "version": "0.5.0",
+            # Local path hints so the add-in can show and open them. These are
+            # filesystem paths only; they contain no mail content.
+            "paths": {
+                "model_dir": str(settings.model_cache_dir),
+                "data_dir": str(settings.product_root),
+                "index_dir": str(settings.db_path.parent),
+                "database": str(settings.db_path),
+                "log_dir": str(settings.log_path.parent),
+                "service_dir": str(Path(__file__).resolve().parent.parent),
+            },
         }
 
     @app.get("/model/status", dependencies=[Depends(require_token)])

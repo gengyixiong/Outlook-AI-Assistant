@@ -9,9 +9,7 @@ using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
-using OutlookAiAssistant.EntityIndex;
 using OutlookAiAssistant.Models;
-using OutlookAiAssistant.Search;
 using OutlookAiAssistant.SemanticSearch;
 using OutlookAiAssistant.Summary;
 using OutlookAiAssistant.UI;
@@ -27,16 +25,6 @@ namespace OutlookAiAssistant.UnitTests
         private static int Main()
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
-            Run("Parses snake_case search plan", ParsesSnakeCaseSearchPlan);
-            Run("Compiles layered allow-listed AQS", CompilesLayeredAqs);
-            Run("Broad search uses only the first concept without anchors", BroadUsesFirstConcept);
-            Run("Broad search falls back to explicit fields", BroadFallsBackToExplicitFields);
-            Run("Parses legacy text groups as concepts", ParsesLegacyTextGroups);
-            Run("Demotes relationship descriptions from sender", DemotesRelationshipSender);
-            Run("Sanitizes generated values", SanitizesGeneratedValues);
-            Run("Rejects empty plans", RejectsEmptyPlans);
-            Run("Rejects invalid date ranges", RejectsInvalidDateRanges);
-            Run("Strips markdown JSON fences", StripsMarkdownJsonFences);
             Run("Builds compatible endpoint URLs", BuildsCompatibleEndpointUrls);
             Run("Builds settings dialog before first display", BuildsSettingsDialog);
             Run("Trims quoted history from stored messages", TrimsQuotedHistory);
@@ -50,15 +38,6 @@ namespace OutlookAiAssistant.UnitTests
             Run("Ignores legacy Windows folder setting", IgnoresLegacyFolderSetting);
             Run("Builds executive brief identity prompt", BuildsExecutiveBriefPrompt);
             Run("Shows editable generic AI settings", ShowsEditableGenericSettings);
-            Run("Round-trips contact index JSON", RoundTripsContactIndex);
-            Run("Backs up contact index safely", BacksUpContactIndex);
-            Run("Rejects malformed contact index", RejectsMalformedContactIndex);
-            Run("Creates stable unique contact IDs", CreatesStableContactIds);
-            Run("Stores Outlook folder contact labels", StoresOutlookFolderLabels);
-            Run("Resolves validated contact IDs", ResolvesValidatedContactIds);
-            Run("Drops unknown contact IDs", DropsUnknownContactIds);
-            Run("Compiles attachment search", CompilesAttachmentSearch);
-            Run("Folder context cannot become sender", FolderContextCannotBecomeSender);
             Run("Serializes semantic index payload", SerializesSemanticIndexPayload);
             Run("Falls back to loopback semantic service url", FallsBackToLoopbackServiceUrl);
             Run("Rejects non-loopback semantic service url", RejectsNonLoopbackServiceUrl);
@@ -77,174 +56,15 @@ namespace OutlookAiAssistant.UnitTests
             return _failed == 0 ? 0 : 1;
         }
 
-        private static void ParsesSnakeCaseSearchPlan()
-        {
-            const string json =
-                "{"
-                + "\"from\":[\"Richard\"],"
-                + "\"to\":[],\"cc\":[],\"to_me\":true,"
-                + "\"anchor_groups\":[[\"GstarBIM\",\"Gstar BIM\"]],"
-                + "\"concept_groups\":[[\"大赛\",\"competition\"]],"
-                + "\"hint_groups\":[[\"Brazil\",\"Brasil\"]],"
-                + "\"subject_groups\":[],\"body_groups\":[],"
-                + "\"received_from\":\"2026-06-01\","
-                + "\"received_through\":\"2026-06-30\","
-                + "\"has_attachments\":true,\"is_unread\":null,"
-                + "\"scope\":\"all_folders\""
-                + "}";
 
-            SearchPlan plan = new SearchPlanParser().Parse(json);
-            Equal("Richard", plan.From[0]);
-            True(plan.ToMe, "to_me should be true");
-            Equal(1, plan.AnchorGroups.Count);
-            Equal(2, plan.AnchorGroups[0].Count);
-            Equal(1, plan.ConceptGroups.Count);
-            Equal(1, plan.HintGroups.Count);
-            Equal(true, plan.HasAttachments.Value);
-            Equal("2026-06-30", plan.ReceivedThrough);
-        }
 
-        private static void CompilesLayeredAqs()
-        {
-            SearchPlan plan = new SearchPlan();
-            plan.From.Add("Richard");
-            plan.AnchorGroups.Add(new System.Collections.Generic.List<string>
-            {
-                "GstarBIM",
-                "Gstar BIM"
-            });
-            plan.AnchorGroups.Add(new System.Collections.Generic.List<string>
-            {
-                "second anchor"
-            });
-            plan.ConceptGroups.Add(new System.Collections.Generic.List<string>
-            {
-                "competition",
-                "contest"
-            });
-            plan.HintGroups.Add(new System.Collections.Generic.List<string>
-            {
-                "Brazil",
-                "Brasil"
-            });
-            plan.ReceivedFrom = "2026-06-01";
-            plan.ReceivedThrough = "2026-06-30";
-            plan.HasAttachments = true;
 
-            SearchQuerySet queries = new AqsQueryCompiler().CompileAll(plan);
-            Equal(
-                "(\"GstarBIM\" OR \"Gstar BIM\")",
-                queries.Broad);
-            Equal(
-                "(\"GstarBIM\" OR \"Gstar BIM\")"
-                + " AND \"second anchor\""
-                + " AND (\"competition\" OR \"contest\")"
-                + " AND from:\"Richard\""
-                + " AND received:>=2026-06-01"
-                + " AND received:<=2026-06-30"
-                + " AND hasattachments:yes",
-                queries.Recommended);
-            Equal(
-                "(\"GstarBIM\" OR \"Gstar BIM\")"
-                + " AND \"second anchor\""
-                + " AND (\"competition\" OR \"contest\")"
-                + " AND (\"Brazil\" OR \"Brasil\")"
-                + " AND from:\"Richard\""
-                + " AND received:>=2026-06-01"
-                + " AND received:<=2026-06-30"
-                + " AND hasattachments:yes",
-                queries.Precise);
-        }
 
-        private static void BroadUsesFirstConcept()
-        {
-            SearchPlan plan = new SearchPlan();
-            plan.ConceptGroups.Add(
-                new System.Collections.Generic.List<string>
-                {
-                    "competition",
-                    "contest"
-                });
-            plan.ConceptGroups.Add(
-                new System.Collections.Generic.List<string>
-                {
-                    "Brazil",
-                    "Brasil"
-                });
 
-            string query = new AqsQueryCompiler().Compile(plan);
-            Equal("(\"competition\" OR \"contest\")", query);
-        }
 
-        private static void BroadFallsBackToExplicitFields()
-        {
-            SearchPlan plan = new SearchPlan();
-            plan.From.Add("Richard");
-            plan.HasAttachments = true;
 
-            string query = new AqsQueryCompiler().Compile(plan);
-            Equal("from:\"Richard\" AND hasattachments:yes", query);
-        }
 
-        private static void ParsesLegacyTextGroups()
-        {
-            SearchPlan plan = new SearchPlanParser().Parse(
-                "{\"text_groups\":[[\"quotation\",\"quote\"]]}");
-            Equal(1, plan.ConceptGroups.Count);
-            Equal("quotation", plan.ConceptGroups[0][0]);
-        }
 
-        private static void DemotesRelationshipSender()
-        {
-            SearchPlan plan = new SearchPlanParser().Parse(
-                "{\"from\":[\"巴西客户\",\"Richard Li\"],"
-                + "\"hint_groups\":[]}");
-            Equal(1, plan.From.Count);
-            Equal("Richard Li", plan.From[0]);
-            Equal(1, plan.HintGroups.Count);
-            Equal("巴西客户", plan.HintGroups[0][0]);
-        }
-
-        private static void SanitizesGeneratedValues()
-        {
-            SearchPlan plan = new SearchPlan();
-            plan.SubjectGroups.Add(
-                new System.Collections.Generic.List<string>
-                {
-                    "quote\") OR from:(\"boss"
-                });
-
-            string query = new AqsQueryCompiler().Compile(
-                plan,
-                SearchStrictness.Recommended);
-            True(!query.Contains("\")"), "quotes and parentheses must be removed");
-            True(
-                query.StartsWith("subject:\"", StringComparison.Ordinal),
-                "term must stay inside a field value");
-        }
-
-        private static void RejectsEmptyPlans()
-        {
-            Throws<InvalidOperationException>(
-                delegate { new AqsQueryCompiler().Compile(new SearchPlan()); });
-        }
-
-        private static void RejectsInvalidDateRanges()
-        {
-            const string json =
-                "{\"received_from\":\"2026-07-20\","
-                + "\"received_through\":\"2026-07-01\"}";
-            Throws<InvalidOperationException>(
-                delegate { new SearchPlanParser().Parse(json); });
-        }
-
-        private static void StripsMarkdownJsonFences()
-        {
-            SearchPlan plan = new SearchPlanParser().Parse(
-                "```json\n{\"from\":[\"Laszlo\"],\"scope\":\"current_folder\"}\n```");
-            Equal("Laszlo", plan.From[0]);
-            Equal("current_folder", plan.Scope);
-        }
 
         private static void BuildsCompatibleEndpointUrls()
         {
@@ -641,234 +461,14 @@ namespace OutlookAiAssistant.UnitTests
             return field.GetValue(instance);
         }
 
-        private static void RoundTripsContactIndex()
-        {
-            ContactIndexStore store = new ContactIndexStore(
-                CreateTemporaryDirectory());
-            try
-            {
-                ContactIndex index = CreateContactIndex(
-                    "jieteng.luo@hawksoft3d.com",
-                    "Jason Luo");
-                index.Contacts[0].Aliases.Add("Jason");
-                FolderContextEntry folder = new FolderContextEntry
-                {
-                    Root = "Mailbox - Yixiong",
-                    RelativePath = "13. 土耳其代理商 system24"
-                };
-                folder.ContactIds.Add(index.Contacts[0].Id);
-                folder.ContactIds.Add("contact_does_not_exist");
-                index.FolderContext.Add(folder);
-                string json = store.Serialize(index);
-                True(json.Contains("\"created_at\""), "created_at must be snake_case");
-                True(json.Contains("\"folder_context\""), "folder_context must share the JSON");
-                True(json.Contains("\"contact_ids\""), "folder labels need contact IDs");
 
-                ContactIndex parsed = store.Parse(json);
-                Equal(1, parsed.Contacts.Count);
-                Equal("jieteng.luo@hawksoft3d.com", parsed.Contacts[0].Email);
-                True(parsed.Contacts[0].Aliases.Contains("Jason"), "alias must survive");
-                True(
-                    parsed.Contacts[0].Aliases.Contains("jieteng.luo"),
-                    "email local part must be an alias");
-                Equal(1, parsed.FolderContext.Count);
-                Equal(
-                    index.Contacts[0].Id,
-                    parsed.FolderContext[0].ContactIds[0]);
-                Equal(1, parsed.FolderContext[0].ContactIds.Count);
-            }
-            finally
-            {
-                DeleteTemporaryDirectory(store.DirectoryPath);
-            }
-        }
 
-        private static void BacksUpContactIndex()
-        {
-            string directory = CreateTemporaryDirectory();
-            try
-            {
-                ContactIndexStore store = new ContactIndexStore(directory);
-                store.Save(CreateContactIndex(
-                    "kun.ma@hawksoft3d.com",
-                    "Kun Ma"));
-                string first = File.ReadAllText(store.IndexPath);
-                store.Save(CreateContactIndex(
-                    "jieteng.luo@hawksoft3d.com",
-                    "Jason Luo"));
-                Equal(1, Directory.GetFiles(
-                    store.BackupDirectory,
-                    "contact-index-*.json").Length);
 
-                ContactIndex invalid = CreateContactIndex(
-                    "first@example.com",
-                    "First");
-                ContactProfile duplicate = new ContactProfile();
-                duplicate.Id = invalid.Contacts[0].Id;
-                duplicate.Email = "second@example.com";
-                invalid.Contacts.Add(duplicate);
-                string beforeFailure = File.ReadAllText(store.IndexPath);
-                Throws<InvalidOperationException>(delegate { store.Save(invalid); });
-                Equal(beforeFailure, File.ReadAllText(store.IndexPath));
-                True(first.Length > 0, "first index should have been written");
-            }
-            finally
-            {
-                DeleteTemporaryDirectory(directory);
-            }
-        }
 
-        private static void StoresOutlookFolderLabels()
-        {
-            ContactIndexStore store = new ContactIndexStore(
-                CreateTemporaryDirectory());
-            try
-            {
-                ContactIndex index = CreateContactIndex(
-                    "lais@example.com",
-                    "Lais Stefany");
-                FolderContextEntry folder = new FolderContextEntry();
-                folder.Root = "Mailbox - Yixiong";
-                folder.RelativePath = "Inbox\\客户\\巴西代理商 Lais Stefany";
-                folder.ContactIds.Add(index.Contacts[0].Id);
-                index.FolderContext.Add(folder);
 
-                ContactIndex parsed = store.Parse(store.Serialize(index));
-                Equal(1, parsed.FolderContext.Count);
-                Equal(folder.RelativePath, parsed.FolderContext[0].RelativePath);
-                Equal(
-                    index.Contacts[0].Id,
-                    parsed.FolderContext[0].ContactIds[0]);
-            }
-            finally
-            {
-                DeleteTemporaryDirectory(store.DirectoryPath);
-            }
-        }
 
-        private static void RejectsMalformedContactIndex()
-        {
-            ContactIndexStore store = new ContactIndexStore(
-                CreateTemporaryDirectory());
-            try
-            {
-                Throws<InvalidOperationException>(delegate
-                {
-                    store.Parse(
-                        "{\"version\":1,\"created_at\":\"2026-08-27T10:00:00\","
-                        + "\"contacts\":{},\"folder_context\":[]}");
-                });
 
-                ContactIndex index = CreateContactIndex(
-                    "known@example.com",
-                    "Known");
-                index.Contacts[0].Id = "contact_forged";
-                Throws<InvalidOperationException>(delegate
-                {
-                    store.Serialize(index);
-                });
-            }
-            finally
-            {
-                DeleteTemporaryDirectory(store.DirectoryPath);
-            }
-        }
 
-        private static void CreatesStableContactIds()
-        {
-            string first = ContactProfile.CreateId("Kun.Ma@HawkSoft3D.com");
-            string same = ContactProfile.CreateId(" kun.ma@hawksoft3d.com ");
-            string other = ContactProfile.CreateId(
-                "jieteng.luo@hawksoft3d.com");
-            Equal(first, same);
-            True(first != other, "different emails need different IDs");
-        }
-
-        private static void ResolvesValidatedContactIds()
-        {
-            ContactIndex index = new ContactIndex();
-            index.CreatedAt = DateTime.Now.ToString("s");
-            ContactProfile ma = CreateContact(
-                "kun.ma@hawksoft3d.com",
-                "Kun Ma",
-                "马坤");
-            ContactProfile jason = CreateContact(
-                "jieteng.luo@hawksoft3d.com",
-                "Jason Luo",
-                "Jason");
-            ContactProfile richard = CreateContact(
-                "richard@example.com",
-                "Richard",
-                "Richard");
-            index.Contacts.Add(ma);
-            index.Contacts.Add(jason);
-            index.Contacts.Add(richard);
-
-            SearchPlan plan = new SearchPlan();
-            plan.MatchedContactIds.Add(ma.Id);
-            plan.MatchedContactIds.Add(jason.Id);
-            plan.MatchedContactIds.Add(richard.Id);
-            new ContactIndexResolver().Resolve(plan, index);
-            Equal(3, plan.MatchedContactIds.Count);
-            True(plan.From.Contains(ma.Email), "Ma email must resolve locally");
-            True(plan.From.Contains(jason.Email), "Jason email must resolve locally");
-            True(plan.From.Contains(richard.Email), "Richard email must resolve locally");
-        }
-
-        private static void DropsUnknownContactIds()
-        {
-            ContactIndex index = CreateContactIndex(
-                "known@example.com",
-                "Known");
-            SearchPlan plan = new SearchPlan();
-            plan.MatchedContactIds.Add("contact_does_not_exist");
-            new ContactIndexResolver().Resolve(plan, index);
-            Equal(0, plan.MatchedContactIds.Count);
-            Equal(0, plan.From.Count);
-        }
-
-        private static void CompilesAttachmentSearch()
-        {
-            ContactIndex index = CreateContactIndex(
-                "kun.ma@hawksoft3d.com",
-                "Kun Ma");
-            string contactId = index.Contacts[0].Id;
-            SearchPlan plan = new SearchPlanParser().Parse(
-                "{\"matched_contact_ids\":[\"" + contactId + "\"],"
-                + "\"attachment_name_groups\":[[\"LT vs Pro\",\"LT PRO\"]],"
-                + "\"attachment_extensions\":[\".XLSX\",\"xls\"],"
-                + "\"has_attachments\":true}");
-            new ContactIndexResolver().Resolve(plan, index);
-            string query = new AqsQueryCompiler().Compile(
-                plan,
-                SearchStrictness.Recommended);
-            True(
-                query.Contains("from:\"kun.ma@hawksoft3d.com\""),
-                "resolved email must be used");
-            True(query.Contains("attachments:\"LT vs Pro\""), "filename must compile");
-            True(query.Contains("attachments:\"xlsx\""), "extension must compile");
-            True(query.Contains("hasattachments:yes"), "attachment filter is required");
-        }
-
-        private static void FolderContextCannotBecomeSender()
-        {
-            ContactIndex index = new ContactIndex();
-            index.CreatedAt = DateTime.Now.ToString("s");
-            index.FolderContext.Add(new FolderContextEntry
-            {
-                Root = "2026 H2",
-                RelativePath = "13. 土耳其代理商 system24"
-            });
-            SearchPlan plan = new SearchPlan();
-            plan.HintGroups.Add(new List<string> { "system24" });
-            new ContactIndexResolver().Resolve(plan, index);
-            string query = new AqsQueryCompiler().Compile(
-                plan,
-                SearchStrictness.Broad);
-            True(
-                !query.Contains("from:"),
-                "folder context must never compile as a sender");
-        }
 
         private static void SerializesSemanticIndexPayload()
         {
@@ -969,13 +569,21 @@ namespace OutlookAiAssistant.UnitTests
                 + "\"model_available\":true,\"device\":\"cpu\",\"index\":{"
                 + "\"mail_count\":100,\"chunk_count\":250,"
                 + "\"embedded_chunk_count\":250,\"size_bytes\":4096,"
-                + "\"last_sync_at\":\"2026-06-15T10:00:00Z\"}}";
+                + "\"last_sync_at\":\"2026-06-15T10:00:00Z\"},"
+                + "\"paths\":{\"model_dir\":\"C:/models\","
+                + "\"index_dir\":\"C:/index\",\"data_dir\":\"C:/data\","
+                + "\"database\":\"C:/index/mail.db\",\"log_dir\":\"C:/logs\","
+                + "\"service_dir\":\"C:/service\"}}";
             SemanticServiceStatus status = InvokeStatusParser(json);
             Equal(true, status.ModelAvailable);
             Equal("google/embeddinggemma-2", status.ModelId);
             Equal(100, status.MailCount);
             Equal(250, status.ChunkCount);
             Equal(4096L, status.SizeBytes);
+            // Path hints drive the "open folder" buttons in Settings.
+            True(status.ModelDir.Contains("models"), "model dir must be parsed");
+            True(status.IndexDir.Contains("index"), "index dir must be parsed");
+            True(status.LogDir.Contains("logs"), "log dir must be parsed");
         }
 
         // The client parses private responses; these helpers expose them for
@@ -1012,6 +620,17 @@ namespace OutlookAiAssistant.UnitTests
                 Convert.ToInt32(index["embedded_chunk_count"]);
             status.SizeBytes = Convert.ToInt64(index["size_bytes"]);
             status.LastSyncAt = Convert.ToString(index["last_sync_at"]);
+            if (root.ContainsKey("paths"))
+            {
+                Dictionary<string, object> paths =
+                    (Dictionary<string, object>)root["paths"];
+                status.ModelDir = Convert.ToString(paths["model_dir"]);
+                status.IndexDir = Convert.ToString(paths["index_dir"]);
+                status.DataDir = Convert.ToString(paths["data_dir"]);
+                status.LogDir = Convert.ToString(paths["log_dir"]);
+                status.ServiceDir = Convert.ToString(paths["service_dir"]);
+            }
+
             return status;
         }
 
@@ -1077,28 +696,7 @@ namespace OutlookAiAssistant.UnitTests
             finally { DeleteTemporaryDirectory(directory); }
         }
 
-        private static ContactIndex CreateContactIndex(
-            string email,
-            string displayName)
-        {
-            ContactIndex index = new ContactIndex();
-            index.CreatedAt = DateTime.Now.ToString("s");
-            index.Contacts.Add(CreateContact(email, displayName, displayName));
-            return index;
-        }
 
-        private static ContactProfile CreateContact(
-            string email,
-            string displayName,
-            string alias)
-        {
-            ContactProfile contact = new ContactProfile();
-            contact.Id = ContactProfile.CreateId(email);
-            contact.Email = email;
-            contact.DisplayName = displayName;
-            contact.Aliases.Add(alias);
-            return contact;
-        }
 
         private static bool ContainsControlText(Control root, string text)
         {

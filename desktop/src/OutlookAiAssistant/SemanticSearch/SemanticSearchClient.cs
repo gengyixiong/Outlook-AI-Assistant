@@ -158,6 +158,17 @@ namespace OutlookAiAssistant.SemanticSearch
                     status.LastSyncAt = GetString(index, "last_sync_at");
                 }
 
+                Dictionary<string, object> paths =
+                    GetObject(root, "paths");
+                if (paths != null)
+                {
+                    status.ModelDir = GetString(paths, "model_dir");
+                    status.IndexDir = GetString(paths, "index_dir");
+                    status.DataDir = GetString(paths, "data_dir");
+                    status.LogDir = GetString(paths, "log_dir");
+                    status.ServiceDir = GetString(paths, "service_dir");
+                }
+
                 return status;
             }
             catch (Exception ex)

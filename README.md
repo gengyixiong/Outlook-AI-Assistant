@@ -7,10 +7,7 @@
 当前正式实施路线是桌面端 COM 加载项，直接运行在用户自己的 Classic Outlook 中：
 
 1. 用户点击按钮后，加载项读取当前邮件或当前 Conversation 的必要内容，生成 Executive Brief。
-2. 用户输入自然语言描述后，AI 负责理解搜索意图；加载项在本地把意图转换为受控的 Outlook AQS 查询。
-3. 联系人、别名、Outlook 归类文件夹和附件线索只用于辅助理解搜索目标，最终邮件搜索由 Outlook 本地 Instant Search 执行。
-4. 联系人索引只在用户手动点击“重建联系人索引”时更新，不后台扫描、不监听新邮件。
-5. 新增本地语义搜索：用户可直接用中文描述邮件内容，由本机模型与混合检索找到最相关的原始邮件，并一键在 Outlook 中打开。
+2. 本地语义搜索：用户用中文描述邮件内容，由本机模型与混合检索找到最相关的原始邮件，并一键在 Outlook 中打开。全部在本机运行。
 
 ## 适配环境
 
@@ -22,7 +19,7 @@
 
 ## 功能亮点
 
-Outlook AI Assistant 主要解决两个问题：快速看懂长邮件，以及用模糊记忆找回邮件。
+Outlook AI Assistant 主要解决两个问题：快速看懂长邮件，以及用中文描述找回历史邮件。
 
 ### 1. 快速看懂长邮件
 
@@ -35,46 +32,7 @@ Outlook AI Assistant 主要解决两个问题：快速看懂长邮件，以及�
 
 它适合快速处理长邮件线程，而不是生成冗长的会议纪要。只有用户点击“生成 Executive Brief”后，加载项才会读取邮件；它不会监听新邮件、自动摘要或批量读取邮箱。
 
-### 2. 用模糊记忆搜索邮件
-
-很多时候，你只记得：
-
-```text
-上个月某个海外代理商发来的邮件
-某个同事发来的带附件邮件
-之前那个产品版本对比的 Excel
-某个项目相关的邮件
-```
-
-却记不住准确的人名、邮箱、公司名、附件文件名或搜索关键词。
-
-Outlook AI Assistant 会把这类描述转换为可执行的本地搜索：
-
-```text
-自然语言
-→ AI 理解搜索意图
-→ 联系人 / 日期 / 关键词 / 附件 / 项目
-→ 本地生成 Outlook 搜索条件
-→ Classic Outlook Instant Search
-```
-
-系统会从 Outlook 历史邮件建立轻量 `contact-index.json`，并综合多种线索理解你的模糊记忆，包括：
-
-- 中文名、拼音、英文名和联系人别名
-- Display Name、Email、公司、国家、地区和业务关系
-- Outlook 左侧栏中 Inbox 旁边的自建归类文件夹名称和路径
-- 文件夹中邮件关联的联系人
-- 附件名称、文件类型和“是否带附件”条件
-
-这些线索只用于帮助 AI 理解“你说的是谁、哪件事或哪个文件”；AI 返回的联系人只能在本地索引中验证，不能直接变成任意邮箱条件。最终查询仍由 Classic Outlook 本地执行，用户可以在宽松、推荐和精确三档搜索范围之间切换。
-
-联系人索引的位置为：
-
-```text
-%LOCALAPPDATA%\OutlookAiAssistant\contact-index.json
-```
-
-### 3. 本地语义搜索（新增）
+### 2. 本地语义搜索
 
 很多时候你只记得邮件的内容大意，却完全不记得邮件里用了什么词。例如：
 
@@ -106,15 +64,12 @@ Regarding the curtain wall edit, can we also edit the Panels individually?
 
 详见 [docs/SEMANTIC-SEARCH.md](docs/SEMANTIC-SEARCH.md)。
 
-### 4. Privacy-first
+### 3. Privacy-first
 
-AI 负责理解，Outlook 负责搜索。
-
-- 搜索不会上传整个邮箱、候选邮件正文、附件内容或 Outlook 搜索结果。
-- 邮件搜索结果不发送给 AI 做二次排序，最终查询由 Classic Outlook 本地 Instant Search 完成。
-- 语义搜索完全在本地运行，不依赖任何外部 LLM，也不上传邮件内容。
-- Executive Brief 只在用户主动点击后读取当前邮件及其 Conversation 上下文。
-- 联系人索引只保留帮助识别联系人和搜索意图所需的轻量信息，不保存完整邮箱内容。
+- 语义搜索完全在本机运行，不依赖任何外部 LLM，也不上传邮件内容。
+- 本地服务只监听 `127.0.0.1`，不对局域网开放。
+- Executive Brief 只在用户主动点击后读取当前邮件及其 Conversation 上下文，
+  并发送给用户自己配置的 OpenAI-compatible API。
 - 不依赖 Microsoft Graph、EWS 或云端 Vector Database。
 - API Key 使用 Windows DPAPI 加密，只能由当前 Windows 用户解密。
 
@@ -126,8 +81,7 @@ AI 负责理解，Outlook 负责搜索。
 4. 重新启动 Outlook。
 5. 在右侧栏“设置”中填写 OpenAI-compatible Base URL、API Key、Model 和 Reasoning Effort。
    新安装默认使用 `https://api.openai.com/v1`、`gpt-5.6-luna` 和 `None`；模型可手动输入，Reasoning Effort 可选 None、Medium 或 Max。
-6. 如需联系人别名、公司或 Outlook 归类文件夹辅助搜索，在设置中点击“重建联系人索引”。
-7. 如需本地语义搜索：安装 Python 3.10–3.12（勾选 Add python.exe to PATH）后，
+6. 如需本地语义搜索：安装 Python 3.10–3.12（勾选 Add python.exe to PATH）后，
    在发布包的 `embedding_service` 中先运行 `install-service.cmd` 把服务安装到
    固定位置（之后下载文件夹即可删除），再依次运行
    `download-model.cmd`、`start-service.cmd`，
@@ -136,9 +90,9 @@ AI 负责理解，Outlook 负责搜索。
 
 安装不需要管理员权限。安装脚本会把插件复制到当前用户的 `%LOCALAPPDATA%\OutlookAiAssistant\app` 并写入当前用户注册表；安装完成后可以删除下载并解压的发布包目录。
 
-更新时，关闭 Outlook 后运行新版本的 `Install.cmd` 即可；已有设置、加密 API Key 和联系人索引会保留。
+更新时，关闭 Outlook 后运行新版本的 `Install.cmd` 即可；已有设置、加密 API Key 和本地语义索引会保留。
 
-卸载时，关闭 Outlook 后运行 `Uninstall.cmd`。默认保留设置、加密 API Key 和联系人索引，方便以后重新安装。
+卸载时，关闭 Outlook 后运行 `Uninstall.cmd`。默认保留设置、加密 API Key 和本地语义索引，方便以后重新安装。
 
 ## 许可证
 

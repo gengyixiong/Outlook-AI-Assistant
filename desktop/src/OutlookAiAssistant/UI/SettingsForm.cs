@@ -5,21 +5,20 @@ using System.Windows.Forms;
 using OutlookAiAssistant.AddIn;
 using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
-using OutlookAiAssistant.EntityIndex;
 using OutlookAiAssistant.SemanticSearch;
 
 namespace OutlookAiAssistant.UI
 {
     /// <summary>
-    /// User-editable OpenAI-compatible settings, summary identity and
-    /// explicitly initiated Outlook contact-index rebuilds.
+    /// User-editable OpenAI-compatible settings, Executive Brief identity,
+    /// semantic index scope, and local data locations.
     /// </summary>
     public sealed class SettingsForm : Form
     {
         private readonly SettingsStore _settingsStore;
         private AppSettings _settings;
-        private readonly ContactIndexStore _contactIndexStore;
-        private readonly ContactIndexService _contactIndexService;
+        private readonly SemanticSearchClient _semanticClient;
+        private readonly SemanticServiceLauncher _semanticLauncher;
         private TextBox _baseUrl;
         private TextBox _apiKey;
         private ComboBox _model;
@@ -31,10 +30,8 @@ namespace OutlookAiAssistant.UI
         private TextBox _identityEmails;
         private TextBox _identityAliases;
         private Label _apiHelp;
-        private Label _indexStatus;
-        private Button _rebuildIndex;
 
-        // Semantic index management.
+        // Semantic index management and local data locations.
         private Label _semanticStatus;
         private NumericUpDown _semanticMonths;
         private NumericUpDown _semanticMaxMails;
@@ -45,8 +42,14 @@ namespace OutlookAiAssistant.UI
         private Button _semanticRefreshButton;
         private Button _semanticDownloadButton;
         private Button _semanticStopButton;
+        private Button _semanticStartServiceButton;
+        private Button _openModelDirButton;
+        private Button _openIndexDirButton;
+        private Button _openLogDirButton;
+        private Label _dataPathsStatus;
         private bool _semanticBusy;
         private CancellationTokenSource _semanticCancellation;
+        private SemanticServiceStatus _lastStatus;
 
         public AppSettings SavedSettings { get; private set; }
 
@@ -60,22 +63,21 @@ namespace OutlookAiAssistant.UI
         public SettingsForm(
             SettingsStore settingsStore,
             AppSettings settings,
-            ContactIndexStore contactIndexStore,
-            ContactIndexService contactIndexService)
+            SemanticSearchClient semanticClient,
+            SemanticServiceLauncher semanticLauncher)
         {
             _settingsStore = settingsStore;
             _settings = settings.Copy();
-            _contactIndexStore = contactIndexStore;
-            _contactIndexService = contactIndexService;
+            _semanticClient = semanticClient;
+            _semanticLauncher = semanticLauncher;
             Text = "AI 邮件助手设置";
             StartPosition = FormStartPosition.CenterParent;
             MinimumSize = new Size(680, 600);
-            Size = new Size(760, 730);
+            Size = new Size(780, 760);
             Font = new Font("Segoe UI", 9F);
             ShowIcon = false;
             BuildInterface();
             LoadSettings();
-            RefreshIndexStatus();
             RefreshSemanticStatus();
         }
 
@@ -92,7 +94,7 @@ namespace OutlookAiAssistant.UI
             root.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             root.Padding = new Padding(18);
             root.ColumnCount = 2;
-            root.RowCount = 15;
+            root.RowCount = 12;
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 155F));
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             scroll.Controls.Add(root);
@@ -164,29 +166,8 @@ namespace OutlookAiAssistant.UI
             _identityAliases = CreateMultilineTextBox(82);
             AddRow(root, 9, "别人对我的称呼", _identityAliases);
 
-            _indexStatus = new Label();
-            _indexStatus.AutoSize = true;
-            _indexStatus.MaximumSize = new Size(520, 0);
-            AddRow(root, 10, "联系人索引", _indexStatus);
-
-            FlowLayoutPanel rebuildPanel = new FlowLayoutPanel();
-            rebuildPanel.Dock = DockStyle.Top;
-            rebuildPanel.AutoSize = true;
-            rebuildPanel.FlowDirection = FlowDirection.TopDown;
-            _rebuildIndex = new Button();
-            _rebuildIndex.Text = "重建联系人索引";
-            _rebuildIndex.AutoSize = true;
-            _rebuildIndex.Enabled = _contactIndexService != null;
-            _rebuildIndex.Click += RebuildIndexClicked;
-            rebuildPanel.Controls.Add(_rebuildIndex);
-            Label rebuildNote = CreateNoteLabel();
-            rebuildNote.Text =
-                "仅点击此按钮时扫描 Classic Outlook。Inbox 旁边及其下级的"
-                + "自建邮件文件夹会作为人工归类标签，并关联其中邮件的联系人；"
-                + "每人最早 1 封和最近最多 3 封代表邮件的必要片段会发送给"
-                + "当前 AI；不会后台扫描。";
-            rebuildPanel.Controls.Add(rebuildNote);
-            AddRow(root, 11, string.Empty, rebuildPanel);
+            // ---- Semantic index scope and local data ----
+            AddRow(root, 10, "语义索引", BuildSemanticPanel());
 
             FlowLayoutPanel buttons = new FlowLayoutPanel();
             buttons.Dock = DockStyle.Fill;
@@ -202,27 +183,8 @@ namespace OutlookAiAssistant.UI
             cancel.DialogResult = DialogResult.Cancel;
             buttons.Controls.Add(save);
             buttons.Controls.Add(cancel);
-
-            // ---- Semantic index management ----
-            _semanticStatus = new Label();
-            _semanticStatus.AutoSize = true;
-            _semanticStatus.MaximumSize = new Size(520, 0);
-            AddRow(root, 13, "语义索引", BuildSemanticPanel());
-
-            root.Controls.Add(buttons, 0, 12);
+            root.Controls.Add(buttons, 0, 11);
             root.SetColumnSpan(buttons, 2);
-
-            FlowLayoutPanel bottomButtons = new FlowLayoutPanel();
-            bottomButtons.Dock = DockStyle.Fill;
-            bottomButtons.FlowDirection = FlowDirection.RightToLeft;
-            bottomButtons.AutoSize = true;
-            Button save2 = new Button();
-            save2.Text = "保存";
-            save2.AutoSize = true;
-            save2.Click += SaveClicked;
-            bottomButtons.Controls.Add(save2);
-            root.Controls.Add(bottomButtons, 0, 14);
-            root.SetColumnSpan(bottomButtons, 2);
 
             AcceptButton = save;
             CancelButton = cancel;
@@ -235,6 +197,7 @@ namespace OutlookAiAssistant.UI
             panel.AutoSize = true;
             panel.Dock = DockStyle.Top;
 
+            _semanticStatus = new Label();
             _semanticStatus.AutoSize = true;
             _semanticStatus.MaximumSize = new Size(520, 0);
             _semanticStatus.Text = "语义索引状态：未检查";
@@ -315,15 +278,139 @@ namespace OutlookAiAssistant.UI
             buttons.Controls.Add(_semanticRefreshButton);
             panel.Controls.Add(buttons);
 
+            // ---- local data locations (paths + one-click open) ----
+            Label locationsTitle = new Label();
+            locationsTitle.Text = "本地数据位置";
+            locationsTitle.AutoSize = true;
+            locationsTitle.Font = new Font(Font, FontStyle.Bold);
+            locationsTitle.Margin = new Padding(3, 12, 3, 3);
+            panel.Controls.Add(locationsTitle);
+
+            _dataPathsStatus = new Label();
+            _dataPathsStatus.AutoSize = true;
+            _dataPathsStatus.MaximumSize = new Size(520, 0);
+            _dataPathsStatus.ForeColor = Color.DimGray;
+            _dataPathsStatus.Text = "（服务未运行，无法获取路径）";
+            panel.Controls.Add(_dataPathsStatus);
+
+            FlowLayoutPanel openButtons = new FlowLayoutPanel();
+            openButtons.AutoSize = true;
+            openButtons.WrapContents = true;
+
+            _openModelDirButton = new Button();
+            _openModelDirButton.Text = "打开模型目录";
+            _openModelDirButton.AutoSize = true;
+            _openModelDirButton.Click += delegate
+            {
+                OpenPath(_lastStatus == null ? null : _lastStatus.ModelDir);
+            };
+            openButtons.Controls.Add(_openModelDirButton);
+
+            _openIndexDirButton = new Button();
+            _openIndexDirButton.Text = "打开索引目录";
+            _openIndexDirButton.AutoSize = true;
+            _openIndexDirButton.Click += delegate
+            {
+                OpenPath(_lastStatus == null ? null : _lastStatus.IndexDir);
+            };
+            openButtons.Controls.Add(_openIndexDirButton);
+
+            _openLogDirButton = new Button();
+            _openLogDirButton.Text = "打开日志目录";
+            _openLogDirButton.AutoSize = true;
+            _openLogDirButton.Click += delegate
+            {
+                OpenPath(_lastStatus == null ? null : _lastStatus.LogDir);
+            };
+            openButtons.Controls.Add(_openLogDirButton);
+
+            _semanticStartServiceButton = new Button();
+            _semanticStartServiceButton.Text = "启动服务";
+            _semanticStartServiceButton.AutoSize = true;
+            _semanticStartServiceButton.Click += SemanticStartServiceClicked;
+            openButtons.Controls.Add(_semanticStartServiceButton);
+            panel.Controls.Add(openButtons);
+
             Label note = CreateNoteLabel();
             note.Text =
-                "语义索引读取邮件正文，并在本机生成向量，保存在 "
-                + "%LOCALAPPDATA%\\OutlookAiAssistant\\semantic-index。"
+                "语义索引读取邮件正文，并在本机生成向量，保存在索引目录中。"
                 + "邮件正文和向量不会上传到任何云端服务。删除索引会同时删除"
-                + "本机保存的邮件正文副本和向量。仍然使用 Outlook 原生搜索与"
-                + "Executive Brief 不受影响。";
+                + "本机保存的邮件正文副本和向量。Executive Brief 不受影响。";
             panel.Controls.Add(note);
             return panel;
+        }
+
+        private void OpenPath(string path)
+        {
+            string error = SemanticServiceLauncher.OpenDirectory(path);
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                MessageBox.Show(
+                    this,
+                    error,
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
+        private async void SemanticStartServiceClicked(object sender, EventArgs e)
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || _semanticBusy || _semanticLauncher == null)
+            {
+                return;
+            }
+
+            if (_semanticLauncher.IsRunning())
+            {
+                RefreshSemanticStatus();
+                return;
+            }
+
+            if (!SemanticServiceLauncher.IsInstalled())
+            {
+                MessageBox.Show(
+                    this,
+                    "尚未安装本地语义搜索服务。\r\n\r\n"
+                    + "请先解压发布包，在 embedding_service 目录中运行 "
+                    + "install-service.cmd，然后回到这里点击“启动服务”。",
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            string error = _semanticLauncher.Start();
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                MessageBox.Show(
+                    this,
+                    error,
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            _semanticStatus.Text = "正在启动本地语义搜索服务…";
+            SetSemanticBusy(true);
+            try
+            {
+                for (int attempt = 0; attempt < 30; attempt++)
+                {
+                    await System.Threading.Tasks.Task.Delay(1000);
+                    if (_semanticClient.GetStatus().Reachable)
+                    {
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                SetSemanticBusy(false);
+                RefreshSemanticStatus();
+            }
         }
 
         private void LoadSettings()
@@ -608,18 +695,20 @@ namespace OutlookAiAssistant.UI
         private void RefreshSemanticStatus()
         {
             Connect addIn = Connect.Current;
-            if (addIn == null)
-            {
-                _semanticStatus.Text = "语义索引状态：加载项正在初始化。";
-                return;
-            }
+            SemanticServiceStatus status = addIn != null && addIn.SemanticClient != null
+                ? addIn.SemanticClient.GetStatus()
+                : (_semanticClient != null
+                    ? _semanticClient.GetStatus()
+                    : new SemanticServiceStatus());
+            _lastStatus = status;
 
-            SemanticServiceStatus status = addIn.SemanticClient.GetStatus();
             if (!status.Reachable)
             {
                 _semanticStatus.Text =
-                    "语义索引状态：本地服务未运行。"
-                    + "请先启动 embedding_service 后再建立索引。";
+                    "语义索引状态：本地服务未运行。点击“启动服务”即可开始。";
+                _dataPathsStatus.Text =
+                    "（服务未运行，无法获取路径）\r\n"
+                    + "服务目录：" + SemanticServiceLauncher.InstalledServiceDirectory;
                 return;
             }
 
@@ -636,6 +725,13 @@ namespace OutlookAiAssistant.UI
                 + (string.IsNullOrWhiteSpace(status.LastSyncAt)
                     ? string.Empty
                     : "\r\n上次同步：" + status.LastSyncAt);
+
+            _dataPathsStatus.Text =
+                "磁盘占用：" + FormatSize(status.SizeBytes)
+                + "（索引数据库及向量）\r\n"
+                + "模型目录：" + status.ModelDir + "\r\n"
+                + "索引目录：" + status.IndexDir + "\r\n"
+                + "日志目录：" + status.LogDir;
         }
 
         private void SetSemanticBusy(bool busy)
@@ -646,6 +742,11 @@ namespace OutlookAiAssistant.UI
             _semanticDeleteButton.Enabled = !busy;
             _semanticRefreshButton.Enabled = !busy;
             _semanticDownloadButton.Enabled = !busy;
+            if (_semanticStartServiceButton != null)
+            {
+                _semanticStartServiceButton.Enabled = !busy;
+            }
+
             if (!busy)
             {
                 _semanticStopButton.Enabled = false;
@@ -684,46 +785,6 @@ namespace OutlookAiAssistant.UI
 
             DialogResult = DialogResult.OK;
             Close();
-        }
-
-        private async void RebuildIndexClicked(object sender, EventArgs e)
-        {
-            AppSettings updated;
-            if (_contactIndexService == null
-                || !TrySaveSettings(out updated))
-            {
-                return;
-            }
-
-            _rebuildIndex.Enabled = false;
-            _indexStatus.Text = "正在扫描 Outlook 本地历史邮件……";
-            try
-            {
-                await _contactIndexService.RebuildAsync(
-                    updated,
-                    CancellationToken.None,
-                    delegate(int completed, int total)
-                    {
-                        _indexStatus.Text = total == 0
-                            ? "正在保存联系人索引……"
-                            : "正在分析联系人：" + completed + "/" + total;
-                    });
-                RefreshIndexStatus();
-            }
-            catch (Exception ex)
-            {
-                RefreshIndexStatus();
-                MessageBox.Show(
-                    this,
-                    "重建联系人索引失败：" + ex.Message,
-                    "AI 邮件助手",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-            }
-            finally
-            {
-                _rebuildIndex.Enabled = true;
-            }
         }
 
         private bool TrySaveSettings(out AppSettings updated)
@@ -796,38 +857,6 @@ namespace OutlookAiAssistant.UI
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error);
                 return false;
-            }
-        }
-
-        private void RefreshIndexStatus()
-        {
-            if (_contactIndexStore == null || !_contactIndexStore.Exists())
-            {
-                _indexStatus.Text =
-                    "联系人索引：未建立\r\nOutlook 归类文件夹：未读取";
-                return;
-            }
-
-            try
-            {
-                ContactIndex index = _contactIndexStore.Load();
-                DateTime createdAt;
-                string displayTime = DateTime.TryParse(
-                    index.CreatedAt,
-                    out createdAt)
-                        ? createdAt.ToString("yyyy-MM-dd HH:mm")
-                        : index.CreatedAt;
-                _indexStatus.Text =
-                    "联系人索引：已建立\r\n联系人数量："
-                    + index.Contacts.Count
-                    + "\r\n最后更新时间：" + displayTime
-                    + "\r\nOutlook 归类文件夹："
-                    + index.FolderContext.Count;
-            }
-            catch
-            {
-                _indexStatus.Text =
-                    "联系人索引：文件无法读取";
             }
         }
 

@@ -118,6 +118,13 @@ namespace OutlookAiAssistant.SemanticSearch
         public string LastSyncAt { get; set; }
         public string Message { get; set; }
 
+        // Local path hints reported by the service, used by the settings UI.
+        public string ModelDir { get; set; }
+        public string IndexDir { get; set; }
+        public string DataDir { get; set; }
+        public string LogDir { get; set; }
+        public string ServiceDir { get; set; }
+
         public SemanticServiceStatus()
         {
             Status = string.Empty;
@@ -126,6 +133,11 @@ namespace OutlookAiAssistant.SemanticSearch
             Device = string.Empty;
             LastSyncAt = string.Empty;
             Message = string.Empty;
+            ModelDir = string.Empty;
+            IndexDir = string.Empty;
+            DataDir = string.Empty;
+            LogDir = string.Empty;
+            ServiceDir = string.Empty;
         }
     }
 

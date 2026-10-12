@@ -234,3 +234,17 @@ def test_search_with_metadata_filters(client):
     assert body["filter_applied"] is True
     assert all(r["sender_email"] == "richard@example.com"
                for r in body["results"])
+
+
+def test_health_reports_local_paths(client):
+    """The add-in shows and opens these paths, so they must be present."""
+
+    body = client.get("/health").json()
+    assert "paths" in body
+    paths = body["paths"]
+    for key in ("model_dir", "data_dir", "index_dir", "database",
+                "log_dir", "service_dir"):
+        assert key in paths, "missing path hint: %s" % key
+        assert paths[key], "empty path hint: %s" % key
+    # Paths must never point at an Outlook or mail-content location.
+    assert "mail.db" in paths["database"]

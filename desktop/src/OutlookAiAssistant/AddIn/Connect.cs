@@ -5,9 +5,7 @@ using Extensibility;
 using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
 using OutlookAiAssistant.Diagnostics;
-using OutlookAiAssistant.EntityIndex;
 using OutlookAiAssistant.OutlookIntegration;
-using OutlookAiAssistant.Search;
 using OutlookAiAssistant.SemanticSearch;
 using OutlookAiAssistant.Summary;
 using OutlookAiAssistant.UI;
@@ -40,13 +38,9 @@ namespace OutlookAiAssistant.AddIn
         public OutlookContextService OutlookContext { get; private set; }
         public OutlookSearchService OutlookSearch { get; private set; }
         public SummaryService SummaryService { get; private set; }
-        public SearchPlannerService SearchPlanner { get; private set; }
-        public AqsQueryCompiler QueryCompiler { get; private set; }
-        public SearchPlanFormatter SearchPlanFormatter { get; private set; }
-        public ContactIndexStore ContactIndexStore { get; private set; }
-        public ContactIndexService ContactIndexService { get; private set; }
         public SemanticSearchClient SemanticClient { get; private set; }
         public SemanticIndexService SemanticIndexService { get; private set; }
+        public SemanticServiceLauncher SemanticServiceLauncher { get; private set; }
         public OutlookMailLocator MailLocator { get; private set; }
 
         public void OnConnection(
@@ -68,28 +62,17 @@ namespace OutlookAiAssistant.AddIn
                 SettingsStore = new SettingsStore();
                 Settings = SettingsStore.Load();
                 OpenAiCompatibleClient aiClient = new OpenAiCompatibleClient();
-                SearchPlanParser parser = new SearchPlanParser();
-                ContactIndexStore = new ContactIndexStore();
                 OutlookContext = new OutlookContextService(_application);
                 OutlookSearch = new OutlookSearchService(_application);
                 SummaryService = new SummaryService(aiClient, SettingsStore);
-                SearchPlanner = new SearchPlannerService(
-                    aiClient,
-                    SettingsStore,
-                    parser,
-                    ContactIndexStore);
-                QueryCompiler = new AqsQueryCompiler();
-                SearchPlanFormatter = new SearchPlanFormatter();
-                ContactIndexService = new ContactIndexService(
-                    new OutlookContactScanner(_application),
-                    new ContactProfileExtractor(aiClient, SettingsStore),
-                    ContactIndexStore);
                 SemanticClient = new SemanticSearchClient(
                     null,
                     SemanticSearchClient.ReadServiceToken());
                 SemanticIndexService = new SemanticIndexService(
                     _application,
                     SemanticClient);
+                SemanticServiceLauncher =
+                    new SemanticServiceLauncher(SemanticClient);
                 MailLocator = new OutlookMailLocator(_application);
                 Logger.Info("Outlook add-in connected.");
             }
@@ -212,8 +195,8 @@ namespace OutlookAiAssistant.AddIn
             using (SettingsForm form = new SettingsForm(
                 SettingsStore,
                 Settings,
-                ContactIndexStore,
-                ContactIndexService))
+                SemanticClient,
+                SemanticServiceLauncher))
             {
                 DialogResult result = owner == null
                     ? form.ShowDialog()
