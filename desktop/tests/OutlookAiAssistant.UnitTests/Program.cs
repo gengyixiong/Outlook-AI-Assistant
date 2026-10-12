@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Drawing;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
@@ -27,6 +28,7 @@ namespace OutlookAiAssistant.UnitTests
             Console.OutputEncoding = System.Text.Encoding.UTF8;
             Run("Builds compatible endpoint URLs", BuildsCompatibleEndpointUrls);
             Run("Builds settings dialog before first display", BuildsSettingsDialog);
+            Run("Builds a visible semantic result card", BuildsVisibleResultCard);
             Run("Trims quoted history from stored messages", TrimsQuotedHistory);
             Run("Keeps ordinary From lines", KeepsOrdinaryFromLines);
             Run("Builds separate history and current prompt", BuildsConversationPrompt);
@@ -104,6 +106,83 @@ namespace OutlookAiAssistant.UnitTests
             {
                 Equal("AI 邮件助手设置", form.Text);
             }
+        }
+
+        // A previous layout used nested Dock=Top panels that collapsed to an
+        // 18-pixel-wide sliver inside the scrolling results panel, so every
+        // search result was invisible and unclickable. This pins the card to a
+        // usable size.
+        private static void BuildsVisibleResultCard()
+        {
+            SemanticSearchResult result = new SemanticSearchResult();
+            result.EntryId = "E1";
+            result.Subject = "Re: Curtain wall edit - can we also edit the "
+                + "Panels individually and export them to a spreadsheet";
+            result.SenderName = "India Client";
+            result.SenderEmail = "india@example.com";
+            result.ReceivedAt = "2026-06-15T09:00:00Z";
+            result.FolderPath = "Inbox";
+            result.Snippet = "Regarding the curtain wall edit, can we also "
+                + "edit the Panels individually?";
+
+            Control card = AssistantPaneControl.BuildResultCardControl(
+                result, 1, new Font("Segoe UI", 9F),
+                delegate { }, delegate { });
+
+            using (Form host = new Form())
+            {
+                host.Width = 410;
+                host.Height = 600;
+                FlowLayoutPanel panel = new FlowLayoutPanel();
+                panel.Dock = DockStyle.Fill;
+                panel.FlowDirection = FlowDirection.TopDown;
+                panel.WrapContents = false;
+                panel.AutoScroll = true;
+                panel.Controls.Add(card);
+                host.Controls.Add(panel);
+                host.Show();
+                Application.DoEvents();
+                panel.PerformLayout();
+                card.PerformLayout();
+                host.PerformLayout();
+                Application.DoEvents();
+
+                True(card.Width >= 200,
+                    "result card must be wide enough to read, got " + card.Width);
+                True(card.Height >= 80,
+                    "result card must be tall enough to read, got " + card.Height);
+                True(card.Width <= panel.Width + 40,
+                    "result card must fit the results panel, got " + card.Width
+                    + " in " + panel.Width);
+
+                Button open = FindButton(card, "打开邮件");
+                Button outlook = FindButton(card, "Outlook 搜索");
+                True(open != null, "card must expose an open button");
+                True(outlook != null, "card must expose an Outlook search button");
+                // The buttons must be reachable (inside the card bounds).
+                True(open.Width > 0 && open.Height > 0, "open button must render");
+                host.Close();
+            }
+        }
+
+        private static Button FindButton(Control root, string text)
+        {
+            foreach (Control child in root.Controls)
+            {
+                Button button = child as Button;
+                if (button != null && button.Text == text)
+                {
+                    return button;
+                }
+
+                Button nested = FindButton(child, text);
+                if (nested != null)
+                {
+                    return nested;
+                }
+            }
+
+            return null;
         }
 
         private static void TrimsQuotedHistory()

@@ -453,89 +453,139 @@ namespace OutlookAiAssistant.UI
             SemanticSearchResult result,
             int rank)
         {
-            Panel card = new Panel();
-            card.BorderStyle = BorderStyle.FixedSingle;
-            card.Width = 360;
+            SemanticSearchResult captured = result;
+            return BuildResultCardControl(
+                result,
+                rank,
+                Font,
+                delegate
+                {
+                    string error = facade.OpenResult(captured);
+                    if (!string.IsNullOrWhiteSpace(error))
+                    {
+                        SetStatus(error);
+                        MessageBox.Show(
+                            this,
+                            error,
+                            "AI 邮件助手",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Warning);
+                    }
+                },
+                delegate { SearchInOutlook(captured); });
+        }
+
+        /// <summary>
+        /// Builds one result card. Kept static and free of Outlook access so
+        /// the layout can be unit tested; a previous version used nested
+        /// Dock=Top panels that collapsed to an 18-pixel-wide sliver inside
+        /// the scrolling results panel, which made every result invisible.
+        /// </summary>
+        public static Control BuildResultCardControl(
+            SemanticSearchResult result,
+            int rank,
+            Font baseFont,
+            Action openAction,
+            Action outlookAction)
+        {
+            // A single-column TableLayoutPanel with AutoSize rows is the most
+            // reliable layout inside an auto-scrolling FlowLayoutPanel.
+            const int cardWidth = 330;
+            const int textWidth = cardWidth - 28;
+
+            TableLayoutPanel card = new TableLayoutPanel();
+            card.ColumnCount = 1;
             card.AutoSize = true;
             card.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            // Fix the width so labels wrap predictably; the panel still grows
+            // vertically with the content.
+            card.Width = cardWidth;
+            card.MinimumSize = new Size(cardWidth, 0);
+            card.MaximumSize = new Size(cardWidth, 0);
             card.Margin = new Padding(3, 4, 3, 4);
             card.Padding = new Padding(8);
             card.BackColor = Color.White;
-
-            TableLayoutPanel body = new TableLayoutPanel();
-            body.Dock = DockStyle.Top;
-            body.AutoSize = true;
-            body.ColumnCount = 1;
-            body.RowCount = 6;
-            body.Width = 335;
+            card.CellBorderStyle = TableLayoutPanelCellBorderStyle.None;
 
             Label title = new Label();
-            title.Text = rank + ". " + DisplaySubject(result.Subject);
-            title.Font = new Font(Font, FontStyle.Bold);
+            title.Text = rank + ". " + DisplaySubjectStatic(result.Subject);
+            title.Font = new Font(baseFont, FontStyle.Bold);
             title.AutoSize = true;
-            title.MaximumSize = new Size(330, 0);
-            body.Controls.Add(title);
+            title.MaximumSize = new Size(textWidth, 0);
+            title.Margin = new Padding(0, 0, 0, 2);
+            card.Controls.Add(title);
 
             Label meta = new Label();
-            meta.Text = FormatSender(result) + "  ·  "
+            meta.Text = FormatSender(result) + "\r\n"
                 + FormatDate(result.ReceivedAt)
                 + (string.IsNullOrWhiteSpace(result.FolderPath)
                     ? string.Empty
-                    : "  ·  " + result.FolderPath);
+                    : "  ·  " + result.FolderPath);;
             meta.AutoSize = true;
-            meta.MaximumSize = new Size(330, 0);
+            meta.MaximumSize = new Size(textWidth, 0);
             meta.ForeColor = Color.DimGray;
-            body.Controls.Add(meta);
+            meta.Margin = new Padding(0, 0, 0, 4);
+            card.Controls.Add(meta);
 
             if (!string.IsNullOrWhiteSpace(result.AttachmentNames))
             {
                 Label attachments = new Label();
                 attachments.Text = "附件：" + result.AttachmentNames;
                 attachments.AutoSize = true;
-                attachments.MaximumSize = new Size(330, 0);
+                attachments.MaximumSize = new Size(textWidth, 0);
                 attachments.ForeColor = Color.DimGray;
-                body.Controls.Add(attachments);
+                attachments.Margin = new Padding(0, 0, 0, 4);
+                card.Controls.Add(attachments);
             }
 
             Label snippet = new Label();
-            snippet.Text = result.Snippet;
+            snippet.Text = string.IsNullOrWhiteSpace(result.Snippet)
+                ? "（无正文片段）"
+                : result.Snippet;
             snippet.AutoSize = true;
-            snippet.MaximumSize = new Size(330, 0);
-            body.Controls.Add(snippet);
+            snippet.MaximumSize = new Size(textWidth, 0);
+            snippet.Margin = new Padding(0, 0, 0, 6);
+            card.Controls.Add(snippet);
 
             FlowLayoutPanel buttons = new FlowLayoutPanel();
             buttons.AutoSize = true;
-            buttons.WrapContents = true;
+            buttons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            buttons.WrapContents = false;
+            buttons.Margin = new Padding(0);
+            buttons.MinimumSize = new Size(0, 32);
 
             Button open = new Button();
             open.Text = "打开邮件";
             open.AutoSize = true;
-            SemanticSearchResult captured = result;
-            open.Click += delegate
-            {
-                string error = facade.OpenResult(captured);
-                if (!string.IsNullOrWhiteSpace(error))
-                {
-                    SetStatus(error);
-                    MessageBox.Show(
-                        this,
-                        error,
-                        "AI 邮件助手",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
-                }
-            };
+            open.Click += delegate { openAction(); };
             buttons.Controls.Add(open);
 
             Button outlook = new Button();
             outlook.Text = "Outlook 搜索";
             outlook.AutoSize = true;
-            outlook.Click += delegate { SearchInOutlook(captured); };
+            outlook.Click += delegate { outlookAction(); };
             buttons.Controls.Add(outlook);
-            body.Controls.Add(buttons);
+            card.Controls.Add(buttons);
 
-            card.Controls.Add(body);
-            return card;
+            // Give the card a visible outline without a BorderStyle, which
+            // does not render on an AutoSize panel.
+            Panel frame = new Panel();
+            frame.BorderStyle = BorderStyle.FixedSingle;
+            frame.AutoSize = true;
+            frame.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            frame.Margin = new Padding(3, 4, 3, 4);
+            frame.Padding = new Padding(1);
+            frame.Controls.Add(card);
+            card.Margin = new Padding(0);
+            return frame;
+        }
+
+        private static string DisplaySubjectStatic(string subject)
+        {
+            string value = string.IsNullOrWhiteSpace(subject)
+                ? "（无主题）"
+                : subject.Trim();
+            return value.Length <= 80 ? value : value.Substring(0, 80) + "…";
         }
 
         private void SearchInOutlook(SemanticSearchResult result)
