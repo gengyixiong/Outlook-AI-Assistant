@@ -91,9 +91,63 @@ class EmbeddingModel:
                 return True
             except Exception as ex:  # pragma: no cover - environment dependent
                 self._model = None
-                self._load_error = "Failed to load embedding model: %s" % ex
+                self._load_error = self._humanize_load_error(ex)
                 logger.error(self._load_error)
                 return False
+
+    def download(self) -> bool:
+        """Download and cache the model without keeping it loaded.
+
+        This is the explicit download step the add-in exposes so a fresh
+        machine does not silently fail every indexing attempt. Returns True
+        when the snapshot is present locally. Network errors are reported
+        through ``load_error``.
+        """
+
+        with self._lock:
+            try:
+                from huggingface_hub import snapshot_download
+            except Exception as ex:  # pragma: no cover
+                self._load_error = (
+                    "huggingface_hub is not installed: %s" % ex
+                )
+                return False
+            try:
+                snapshot_download(repo_id=self.model_id)
+                self._load_error = None
+                return True
+            except Exception as ex:  # pragma: no cover - network dependent
+                self._load_error = self._humanize_load_error(ex)
+                logger.error(self._load_error)
+                return False
+
+    def _humanize_load_error(self, ex: Exception) -> str:
+        """Turn a raw model/hub error into an actionable message."""
+
+        text = str(ex)
+        lowered = text.lower()
+        if "401" in text or "403" in text or "gated" in lowered \
+                or "invalid username or password" in lowered \
+                or "unauthorized" in lowered:
+            return (
+                "Cannot download the embedding model (%s). The repository "
+                "may be gated or require a Hugging Face token. Run the "
+                "download-model step with network access, or set HF_TOKEN. "
+                "Original error: %s" % (self.model_id, text)
+            )
+        if "connection" in lowered or "timed out" in lowered \
+                or "couldn't connect" in lowered or "network" in lowered:
+            return (
+                "Cannot reach Hugging Face to download the embedding model "
+                "(%s). Check the network or proxy, then retry the model "
+                "download. Original error: %s" % (self.model_id, text)
+            )
+        if "no module named" in lowered or "modulenotfound" in lowered:
+            return (
+                "The embedding runtime is incomplete: %s. Re-run "
+                "setup-venv.cmd." % text
+            )
+        return "Failed to load embedding model: %s" % text
 
     def _resolve_dtype(self, torch_module):
         """Map the configured dtype to a torch dtype.

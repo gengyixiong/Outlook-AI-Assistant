@@ -15,6 +15,14 @@ namespace OutlookAiAssistant.SemanticSearch
     /// </summary>
     public sealed class SemanticServiceException : Exception
     {
+        /// <summary>HTTP status code, or 0 when the request never connected.</summary>
+        public int StatusCode { get; private set; }
+
+        public bool IsModelUnavailable
+        {
+            get { return StatusCode == 503; }
+        }
+
         public SemanticServiceException(string message)
             : base(message)
         {
@@ -23,6 +31,12 @@ namespace OutlookAiAssistant.SemanticSearch
         public SemanticServiceException(string message, Exception inner)
             : base(message, inner)
         {
+        }
+
+        public SemanticServiceException(string message, int statusCode)
+            : base(message)
+        {
+            StatusCode = statusCode;
         }
     }
 
@@ -84,6 +98,39 @@ namespace OutlookAiAssistant.SemanticSearch
             return Task.Factory.StartNew(
                 delegate { return GetStatus(); },
                 cancellationToken);
+        }
+
+        /// <summary>
+        /// Downloads and caches the embedding model on the local machine. This
+        /// is the explicit step a fresh machine needs; without it every index
+        /// request fails with a clear model-unavailable error.
+        /// </summary>
+        public void DownloadModel()
+        {
+            Send("POST", "/model/download", "{}", true);
+        }
+
+        /// <summary>Reports whether the model can be used, and why not.</summary>
+        public SemanticServiceStatus GetModelStatus()
+        {
+            try
+            {
+                string json = Send("GET", "/model/status", null, true);
+                Dictionary<string, object> root = Deserialize(json);
+                SemanticServiceStatus status = new SemanticServiceStatus();
+                status.Reachable = true;
+                status.ModelId = GetString(root, "model_id");
+                status.ModelAvailable = GetBool(root, "available");
+                status.ModelError = GetString(root, "error");
+                return status;
+            }
+            catch (Exception ex)
+            {
+                SemanticServiceStatus status = new SemanticServiceStatus();
+                status.Reachable = false;
+                status.Message = ex.Message;
+                return status;
+            }
         }
 
         public SemanticServiceStatus GetStatus()
@@ -386,7 +433,8 @@ namespace OutlookAiAssistant.SemanticSearch
             catch (WebException ex)
             {
                 throw new SemanticServiceException(
-                    BuildErrorMessage(ex), ex);
+                    BuildErrorMessage(ex),
+                    GetStatusCode(ex));
             }
             finally
             {
@@ -395,6 +443,12 @@ namespace OutlookAiAssistant.SemanticSearch
                     request.Abort();
                 }
             }
+        }
+
+        private static int GetStatusCode(WebException ex)
+        {
+            HttpWebResponse response = ex.Response as HttpWebResponse;
+            return response == null ? 0 : (int)response.StatusCode;
         }
 
         private static string BuildErrorMessage(WebException ex)
@@ -413,6 +467,13 @@ namespace OutlookAiAssistant.SemanticSearch
                 if (response.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     return "本地语义搜索服务拒绝了访问令牌。请重启服务以刷新令牌。";
+                }
+
+                if ((int)response.StatusCode == 503)
+                {
+                    return "本地语义模型尚未就绪。请先点击“下载模型”"
+                        + "（或运行 embedding_service\\download-model.cmd），"
+                        + "完成后再建立索引。";
                 }
 
                 try

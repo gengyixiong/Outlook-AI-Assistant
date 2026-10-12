@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from .config import ServiceSettings
 from .database import Database
-from .embedding_model import EmbeddingModel
+from .embedding_model import EmbeddingModel, EmbeddingModelUnavailable
 from .indexing import Indexer, IndexMailRequest
 from .search import HybridSearch
 
@@ -172,11 +172,55 @@ def create_app(
             "version": "0.5.0",
         }
 
+    @app.get("/model/status", dependencies=[Depends(require_token)])
+    def model_status() -> dict:
+        """Report whether the model can be used, and why not if it cannot."""
+
+        # Attempt a load so the caller gets the real reason (network, gated
+        # repo, missing runtime) instead of an empty error string.
+        if not state.model.available:
+            state.model.load()
+        return {
+            "model_id": settings.model_id,
+            "available": state.model.available,
+            "error": state.model.load_error or "",
+        }
+
+    @app.post("/model/download", dependencies=[Depends(require_token)])
+    def download_model() -> dict:
+        """Explicitly download and cache the model.
+
+        This is the step a fresh machine needs before indexing can work. It
+        only downloads; the add-in can then call /health to see availability.
+        """
+
+        ok = state.model.download()
+        if not ok:
+            raise HTTPException(
+                status_code=502,
+                detail=state.model.load_error
+                or "Model download failed.",
+            )
+        loaded = state.model.load()
+        return {
+            "downloaded": True,
+            "available": loaded,
+            "error": state.model.load_error or "",
+        }
+
     @app.post("/index/mail", dependencies=[Depends(require_token)])
     def index_mail(payload: MailPayload) -> dict:
         if not payload.store_id and not payload.entry_id:
             raise HTTPException(
                 status_code=400, detail="store_id or entry_id is required"
+            )
+        # Fail before touching the database when the model is unusable, so a
+        # broken setup cannot fill the index with vector-less rows.
+        if not state.model.available and not state.model.load():
+            raise HTTPException(
+                status_code=503,
+                detail=state.model.load_error
+                or "Embedding model is unavailable. Download it first.",
             )
         payload_data = payload.model_dump()
         force_reembed = bool(payload_data.pop("force_reembed", False))
@@ -185,6 +229,9 @@ def create_app(
             result = state.indexer.index_mail(
                 request, force_reembed=force_reembed
             )
+        except EmbeddingModelUnavailable as ex:
+            # The model disappeared mid-build; stop with a clear status.
+            raise HTTPException(status_code=503, detail=str(ex))
         except Exception as ex:  # keep the add-in alive on a single bad mail
             logger.exception("Indexing failed for entry %s", payload.entry_id)
             raise HTTPException(status_code=500, detail=str(ex))

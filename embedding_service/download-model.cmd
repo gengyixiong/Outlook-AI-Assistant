@@ -1,6 +1,10 @@
 @echo off
-REM Downloads/caches the embedding model so that later runs work offline.
-REM Run once after setup-venv.cmd.
+REM Downloads and caches the embedding model so later runs work offline.
+REM Run this ONCE after setup-venv.cmd and BEFORE building any index.
+REM
+REM On a machine that has not downloaded the model, indexing would otherwise
+REM fail for every mail. This step requires network access (about 1.5 GB).
+REM Afterwards the service runs fully offline.
 
 setlocal
 set SCRIPT_DIR=%~dp0
@@ -12,5 +16,15 @@ if not exist "%VENV_DIR%\Scripts\python.exe" (
 )
 
 cd /d "%SCRIPT_DIR%"
-"%VENV_DIR%\Scripts\python.exe" -m app.main --check
+echo Downloading the local semantic model. This can take several minutes...
+"%VENV_DIR%\Scripts\python.exe" -m app.main --download-model
+if errorlevel 1 (
+  echo.
+  echo Model download FAILED. Check the network or proxy and try again.
+  echo If the repository requires a Hugging Face token, set HF_TOKEN first.
+  exit /b 1
+)
+
+echo.
+echo Model is ready. You can now start the service and build the index.
 endlocal

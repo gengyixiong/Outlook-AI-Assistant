@@ -55,10 +55,13 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 
 语义搜索需要额外的本地 Python 组件。不安装时，原有功能不受影响。
 
+**按顺序执行以下步骤，模型下载步骤在建立索引前是必需的：**
+
 1. 安装 Python 3.10–3.12（`python.org`）。
 2. 进入发布包中的 `embedding_service` 目录。
 3. 双击 `setup-venv.cmd`，等待依赖安装完成（CPU 版 PyTorch，约数百 MB）。
-4. 双击 `download-model.cmd`，首次会下载模型（约 1.5 GB）并缓存到：
+4. 双击 `download-model.cmd`，**首次会下载模型（约 1.5 GB，需要联网）**
+   并缓存到：
 
 ```text
 %LOCALAPPDATA%\OutlookAiAssistant\models
@@ -67,8 +70,18 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 5. 双击 `start-service.cmd` 启动服务；它会监听 `127.0.0.1:8765`。
 6. 在 Outlook 侧栏“语义搜索”页点击“建立 / 更新语义索引”。
 
+如果忘记下载模型，索引不会偷偷写入无用数据：界面会明确提示
+“本地语义模型尚未就绪”，并提供“下载模型”按钮。也可以直接在界面点击
+“下载模型”完成下载（需要联网）。
+
 索引范围和最大邮件数可在“设置 > 语义索引”中调整。模型下载完成后，
 语义搜索可完全离线运行。
+
+### 停止索引
+
+建立索引时，“停止索引”按钮可用。点击后会在当前这一封邮件处理完成后
+停止；已经完成的邮件会保留，可稍后继续增量同步。索引过程不会阻塞
+Outlook UI。
 
 ## 看不到侧栏
 
@@ -97,9 +110,10 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 %LOCALAPPDATA%\OutlookAiAssistant\logs\semantic-service.log
 ```
 
-4. 如果提示“模型不可用”，先运行 `download-model.cmd`。
+4. 如果提示“模型尚未就绪”或“模型不可用”，点击“下载模型”
+   （或运行 `download-model.cmd`）完成一次下载。
 5. 如果提示“没有找到匹配的邮件”，可能是索引尚未建立，或描述过于宽泛。
-6. 服务不可用不会影响 Executive Brief、联系人索引和 Outlook 原生搜索。
+6. 服务或模型不可用不会影响 Executive Brief、联系人索引和 Outlook 原生搜索。
 
 ## 搜索结果不完整
 

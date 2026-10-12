@@ -1,4 +1,4 @@
-Outlook AI Assistant 0.5.0
+Outlook AI Assistant 0.5.1
 ==========================
 
 系统要求
@@ -20,12 +20,14 @@ Outlook AI Assistant 0.5.0
 
 本地语义搜索（可选）
 --------------------
+重要：必须先下载模型，否则无法建立索引。
 1. 安装 Python 3.10-3.12。
 2. 进入 embedding_service 目录。
 3. 运行 setup-venv.cmd 安装依赖（CPU 版 PyTorch）。
-4. 运行 download-model.cmd 下载并缓存模型（约 1.5 GB）。
+4. 运行 download-model.cmd 下载并缓存模型（约 1.5 GB，需要联网）。
 5. 运行 start-service.cmd 启动本地服务（仅监听 127.0.0.1）。
 6. 在 Outlook 侧栏“语义搜索”页点击“建立 / 更新语义索引”。
+也可直接在界面点击“下载模型”。索引过程中可用“停止索引”中断。
 不安装此组件时，原有功能完全不受影响。
 
 更新

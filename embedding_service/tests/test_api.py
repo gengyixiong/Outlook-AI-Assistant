@@ -155,6 +155,52 @@ def test_empty_query_rejected(client):
     assert response.status_code == 400
 
 
+def test_model_status_endpoint(client):
+    response = client.get("/model/status", headers=auth())
+    assert response.status_code == 200
+    body = response.json()
+    assert "available" in body
+    assert "model_id" in body
+
+
+def test_model_status_requires_token(client):
+    assert client.get("/model/status").status_code == 401
+
+
+def test_index_returns_503_when_model_unavailable(client):
+    """A missing model must be reported as 503, not a silent success."""
+
+    from app.embedding_model import EmbeddingModelUnavailable
+
+    class BrokenModel:
+        available = False
+        load_error = "not downloaded"
+
+        def load(self):
+            return False
+
+        def encode_documents(self, *a, **k):
+            raise EmbeddingModelUnavailable("not downloaded")
+
+        def encode_queries(self, *a, **k):
+            raise EmbeddingModelUnavailable("not downloaded")
+
+    app = client.app
+    app.state.service.model = BrokenModel()
+    from app.indexing import Indexer
+
+    app.state.service.indexer = Indexer(
+        app.state.service.database, BrokenModel(), app.state.service.settings
+    )
+    response = client.post("/index/mail", json=mail_payload(), headers=auth())
+    assert response.status_code == 503
+    # The message must be actionable, not an empty body.
+    assert response.json()["detail"]
+    # Nothing was written.
+    stats = client.get("/stats", headers=auth()).json()
+    assert stats["mail_count"] == 0
+
+
 def test_bad_mail_does_not_crash_service(client):
     # Missing body is fine; the service must still respond.
     response = client.post(

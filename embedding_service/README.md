@@ -7,15 +7,36 @@ computer.
 
 ## Quick start
 
+Run these in order. The model download step is **required before indexing**;
+without it the add-in reports that the model is not ready instead of building
+a useless index.
+
 ```text
 setup-venv.cmd        # create .venv and install dependencies (once)
-download-model.cmd    # download and cache the model (once, ~1.5 GB)
+download-model.cmd    # download and cache the model (once, ~1.5 GB, needs network)
 start-service.cmd     # start the service on 127.0.0.1:8765
 ```
+
+Then, in Outlook, open the **Semantic Search** tab and click
+**Download model** if the status says the model is not ready, then
+**Build / update semantic index**.
 
 The add-in reads the shared token from
 `%LOCALAPPDATA%\OutlookAiAssistant\semantic-service-token` and sends it as a
 bearer token. The token is created automatically on first start.
+
+### Why the download step is separate
+
+`google/embeddinggemma-2` is not bundled with the release (it is several GB).
+On a machine that has never downloaded it, indexing would fail for every
+mail. Rather than silently writing vector-less rows, the service refuses to
+index and the add-in tells you to download the model first. You can trigger
+the same download from the Outlook UI (**Download model**) or from the
+command line:
+
+```text
+download-model.cmd
+```
 
 ## Why a separate service?
 

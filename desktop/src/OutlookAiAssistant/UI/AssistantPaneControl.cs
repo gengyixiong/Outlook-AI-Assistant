@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using OutlookAiAssistant.AddIn;
 using OutlookAiAssistant.Configuration;
@@ -43,11 +44,14 @@ namespace OutlookAiAssistant.UI
         private TextBox _semanticInput;
         private Button _semanticSearchButton;
         private Button _semanticIndexButton;
+        private Button _semanticStopButton;
+        private Button _semanticDownloadModelButton;
         private Button _openServiceButton;
         private Label _semanticIndexStatus;
         private FlowLayoutPanel _semanticResultsPanel;
         private Label _semanticStatus;
         private bool _semanticBusy;
+        private CancellationTokenSource _indexCancellation;
 
         public AssistantPaneControl()
         {
@@ -261,6 +265,23 @@ namespace OutlookAiAssistant.UI
             _semanticIndexButton.Margin = new Padding(3, 0, 3, 3);
             _semanticIndexButton.Click += SemanticIndexClicked;
             actions.Controls.Add(_semanticIndexButton);
+
+            _semanticStopButton = new Button();
+            _semanticStopButton.Text = "停止索引";
+            _semanticStopButton.AutoSize = true;
+            _semanticStopButton.MinimumSize = new Size(88, 29);
+            _semanticStopButton.Enabled = false;
+            _semanticStopButton.Margin = new Padding(3, 0, 3, 3);
+            _semanticStopButton.Click += SemanticStopClicked;
+            actions.Controls.Add(_semanticStopButton);
+
+            _semanticDownloadModelButton = new Button();
+            _semanticDownloadModelButton.Text = "下载模型";
+            _semanticDownloadModelButton.AutoSize = true;
+            _semanticDownloadModelButton.MinimumSize = new Size(88, 29);
+            _semanticDownloadModelButton.Margin = new Padding(3, 0, 3, 3);
+            _semanticDownloadModelButton.Click += SemanticDownloadModelClicked;
+            actions.Controls.Add(_semanticDownloadModelButton);
 
             _openServiceButton = new Button();
             _openServiceButton.Text = "检查本地服务";
@@ -711,7 +732,8 @@ namespace OutlookAiAssistant.UI
                 "将扫描最近 " + addIn.Settings.SemanticIndexMonths
                 + " 个月、最多 " + addIn.Settings.SemanticIndexMaxMails
                 + " 封邮件，读取正文并生成完全在本机运行的语义向量。"
-                + "\r\n\r\n邮件正文和向量不会离开这台电脑。可以随时取消。"
+                + "\r\n\r\n邮件正文和向量不会离开这台电脑。可以随时点击"
+                + "“停止索引”中断。"
                 + "\r\n\r\n是否开始？",
                 "建立语义索引",
                 MessageBoxButtons.OKCancel,
@@ -721,14 +743,48 @@ namespace OutlookAiAssistant.UI
                 return;
             }
 
+            // The model is required for every mail. Check it up front so a
+            // fresh machine fails fast with an actionable message instead of
+            // reporting thousands of individual failures.
+            SemanticServiceStatus model = addIn.SemanticClient.GetModelStatus();
+            if (!model.Reachable)
+            {
+                MessageBox.Show(
+                    this,
+                    string.IsNullOrWhiteSpace(model.Message)
+                        ? "本地语义搜索服务未运行。请先启动 embedding_service。"
+                        : model.Message,
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            if (!model.ModelAvailable)
+            {
+                string detail = string.IsNullOrWhiteSpace(model.ModelError)
+                    ? "本地语义模型尚未就绪。"
+                    : model.ModelError;
+                MessageBox.Show(
+                    this,
+                    detail + "\r\n\r\n请先点击“下载模型”（需要联网，之后可离线使用），"
+                        + "完成后再建立索引。",
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
             SetSemanticBusy(true, "正在建立语义索引…");
+            _indexCancellation = new CancellationTokenSource();
+            _semanticStopButton.Enabled = true;
             try
             {
                 SemanticIndexService service = addIn.SemanticIndexService;
                 SemanticIndexReport report =
                     await service.BuildIndexAsync(
                         addIn.Settings,
-                        CancellationToken.None,
+                        _indexCancellation.Token,
                         delegate(SemanticIndexProgress progress)
                         {
                             UpdateIndexProgress(progress);
@@ -737,21 +793,7 @@ namespace OutlookAiAssistant.UI
                         {
                             return Invoke(action);
                         });
-                _semanticIndexButton.Enabled = true;
-                if (!string.IsNullOrWhiteSpace(report.Error))
-                {
-                    _semanticStatus.ForeColor = Color.FromArgb(176, 0, 32);
-                    _semanticStatus.Text = "索引失败：" + report.Error;
-                }
-                else
-                {
-                    _semanticStatus.Text = "索引完成：新增/更新 "
-                        + report.Indexed + "，跳过未变化 " + report.Skipped
-                        + "，失败 " + report.Failed + "。";
-                    _semanticStatus.ForeColor = Color.DimGray;
-                }
-
-                RefreshSemanticIndexStatus();
+                ReportIndexOutcome(report);
             }
             catch (Exception ex)
             {
@@ -759,8 +801,114 @@ namespace OutlookAiAssistant.UI
             }
             finally
             {
+                _semanticStopButton.Enabled = false;
+                _indexCancellation.Dispose();
+                _indexCancellation = null;
                 SetSemanticBusy(false, null);
             }
+        }
+
+        private void ReportIndexOutcome(SemanticIndexReport report)
+        {
+            if (report.ModelUnavailable)
+            {
+                _semanticStatus.ForeColor = Color.FromArgb(176, 0, 32);
+                _semanticStatus.Text = "索引已停止：本地语义模型不可用。\r\n"
+                    + report.Error
+                    + "\r\n请先点击“下载模型”，完成后再建立索引。";
+            }
+            else if (report.Cancelled)
+            {
+                _semanticStatus.ForeColor = Color.DimGray;
+                _semanticStatus.Text = "索引已停止。已完成的 "
+                    + report.Indexed + " 封邮件已保存，可稍后继续。";
+            }
+            else if (!string.IsNullOrWhiteSpace(report.Error))
+            {
+                _semanticStatus.ForeColor = Color.FromArgb(176, 0, 32);
+                _semanticStatus.Text = "索引中止：" + report.Error;
+            }
+            else
+            {
+                _semanticStatus.ForeColor = Color.DimGray;
+                _semanticStatus.Text = "索引完成：新增/更新 "
+                    + report.Indexed + "，跳过未变化 " + report.Skipped
+                    + "，失败 " + report.Failed + "。";
+            }
+        }
+
+        private void SemanticStopClicked(object sender, EventArgs e)
+        {
+            if (_indexCancellation == null || _indexCancellation.IsCancellationRequested)
+            {
+                return;
+            }
+
+            _semanticStopButton.Enabled = false;
+            SetStatus("正在停止索引…（当前这一封完成后停止）");
+            _indexCancellation.Cancel();
+        }
+
+        private async void SemanticDownloadModelClicked(object sender, EventArgs e)
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || _semanticBusy)
+            {
+                return;
+            }
+
+            SemanticServiceStatus status = addIn.SemanticClient.GetStatus();
+            if (!status.Reachable)
+            {
+                MessageBox.Show(
+                    this,
+                    "本地语义搜索服务未运行。请先运行 embedding_service "
+                    + "中的 start-service.cmd。",
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            SetSemanticBusy(true, "正在下载本地语义模型，首次约 1.5 GB，请稍候…");
+            try
+            {
+                SemanticServiceStatus result = await Task.Factory.StartNew(
+                    delegate { return DownloadModel(addIn); },
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default);
+                if (result.ModelAvailable)
+                {
+                    SetStatus("本地语义模型已就绪。");
+                }
+                else
+                {
+                    ShowError("下载模型失败", new InvalidOperationException(
+                        string.IsNullOrWhiteSpace(result.ModelError)
+                            ? "未知错误。"
+                            : result.ModelError));
+                }
+            }
+            finally
+            {
+                SetSemanticBusy(false, null);
+                RefreshSemanticIndexStatus();
+            }
+        }
+
+        private static SemanticServiceStatus DownloadModel(Connect addIn)
+        {
+            try
+            {
+                addIn.SemanticClient.DownloadModel();
+            }
+            catch (SemanticServiceException)
+            {
+                // Fall through: the status call below reports the reason.
+            }
+
+            return addIn.SemanticClient.GetModelStatus();
         }
 
         private void UpdateIndexProgress(SemanticIndexProgress progress)
@@ -802,8 +950,7 @@ namespace OutlookAiAssistant.UI
                 return;
             }
 
-            SemanticServiceStatus status = addIn.SemanticClient.GetStatus();
-            if (!status.Reachable)
+            if (!addIn.SemanticClient.GetStatus().Reachable)
             {
                 _semanticIndexStatus.Text =
                     "索引状态：本地语义服务未运行。\r\n"
@@ -812,12 +959,23 @@ namespace OutlookAiAssistant.UI
                 return;
             }
 
+            SemanticServiceStatus status = addIn.SemanticClient.GetStatus();
+            if (!status.ModelAvailable)
+            {
+                _semanticIndexStatus.Text =
+                    "索引状态：服务已运行，但本地语义模型尚未就绪。\r\n"
+                    + "请点击“下载模型”完成一次下载（之后可离线使用）。\r\n"
+                    + (string.IsNullOrWhiteSpace(status.ModelError)
+                        ? string.Empty
+                        : "原因：" + status.ModelError);
+                return;
+            }
+
             _semanticIndexStatus.Text =
                 "索引状态：已索引 " + status.MailCount + " 封邮件，"
                 + status.ChunkCount + " 个片段（"
                 + status.EmbeddedChunkCount + " 个已向量化）。\r\n"
-                + "模型：" + status.ModelId
-                + (status.ModelAvailable ? "（可用）" : "（不可用）")
+                + "模型：" + status.ModelId + "（就绪）"
                 + "，设备：" + status.Device
                 + "，占用：" + FormatSize(status.SizeBytes)
                 + (string.IsNullOrWhiteSpace(status.LastSyncAt)
@@ -830,7 +988,13 @@ namespace OutlookAiAssistant.UI
             _semanticBusy = busy;
             _semanticSearchButton.Enabled = !busy;
             _semanticIndexButton.Enabled = !busy;
+            _semanticDownloadModelButton.Enabled = !busy;
             _openServiceButton.Enabled = !busy;
+            if (!busy)
+            {
+                _semanticStopButton.Enabled = false;
+            }
+
             if (!string.IsNullOrWhiteSpace(status))
             {
                 SetStatus(status);

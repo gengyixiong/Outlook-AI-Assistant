@@ -67,6 +67,8 @@ namespace OutlookAiAssistant.UnitTests
             Run("Parses semantic health status", ParsesSemanticHealthStatus);
             Run("Preserves semantic index settings", PreservesSemanticIndexSettings);
             Run("Clamps invalid semantic index settings", ClampsInvalidSemanticIndexSettings);
+            Run("Treats 503 as model unavailable", Treats503AsModelUnavailable);
+            Run("Reports model status from the local service", ReportsModelStatus);
 
             Console.WriteLine(
                 "Tests complete. Passed: {0}; Failed: {1}",
@@ -1011,6 +1013,32 @@ namespace OutlookAiAssistant.UnitTests
             status.SizeBytes = Convert.ToInt64(index["size_bytes"]);
             status.LastSyncAt = Convert.ToString(index["last_sync_at"]);
             return status;
+        }
+
+        private static void Treats503AsModelUnavailable()
+        {
+            SemanticServiceException modelDown =
+                new SemanticServiceException("model missing", 503);
+            Equal(true, modelDown.IsModelUnavailable);
+            Equal(503, modelDown.StatusCode);
+            SemanticServiceException network =
+                new SemanticServiceException("no service", 0);
+            Equal(false, network.IsModelUnavailable);
+            SemanticServiceException serverError =
+                new SemanticServiceException("boom", 500);
+            Equal(false, serverError.IsModelUnavailable);
+        }
+
+        private static void ReportsModelStatus()
+        {
+            // A dead port must yield an unreachable status with a message,
+            // never an exception.
+            SemanticSearchClient client = new SemanticSearchClient(
+                "http://127.0.0.1:1", "t");
+            SemanticServiceStatus status = client.GetModelStatus();
+            Equal(false, status.Reachable);
+            True(status.Message.Length > 0,
+                "unreachable model status must explain why");
         }
 
         private static void PreservesSemanticIndexSettings()

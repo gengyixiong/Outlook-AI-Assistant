@@ -34,6 +34,14 @@ namespace OutlookAiAssistant.SemanticSearch
         public bool Cancelled { get; set; }
         public string Error { get; set; }
 
+        /// <summary>
+        /// True when the build stopped because the embedding model is not
+        /// available. This is a setup problem, not a per-mail failure, so the
+        /// UI must tell the user to download the model instead of reporting
+        /// hundreds of individual failures.
+        /// </summary>
+        public bool ModelUnavailable { get; set; }
+
         public SemanticIndexReport()
         {
             Error = string.Empty;
@@ -154,6 +162,8 @@ namespace OutlookAiAssistant.SemanticSearch
                 progress(Clone(state));
             }
 
+            int consecutiveFailures = 0;
+
             for (int index = 0; index < candidates.Count; index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -189,6 +199,7 @@ namespace OutlookAiAssistant.SemanticSearch
                         .IndexMailAsync(payload, cancellationToken)
                         .GetAwaiter()
                         .GetResult();
+                    consecutiveFailures = 0;
                     bool skipped = response.IndexOf(
                         "\"skipped\":true",
                         StringComparison.OrdinalIgnoreCase) >= 0;
@@ -207,13 +218,48 @@ namespace OutlookAiAssistant.SemanticSearch
                 {
                     throw;
                 }
+                catch (SemanticServiceException ex)
+                {
+                    if (ex.IsModelUnavailable)
+                    {
+                        // Stop immediately: without the model nothing else
+                        // can succeed and continuing would waste the user's
+                        // time on every remaining mail.
+                        report.ModelUnavailable = true;
+                        report.Error = ex.Message;
+                        Logger.Error(
+                            "Semantic index stopped: model unavailable.", ex);
+                        break;
+                    }
+
+                    state.Failed++;
+                    report.Failed++;
+                    consecutiveFailures++;
+                    Logger.Error(
+                        "Indexing one mail failed; continuing.", ex);
+
+                    // A run of failures usually means the service went away
+                    // rather than one bad message. Stop instead of grinding
+                    // through the rest of the mailbox.
+                    if (consecutiveFailures >= 10)
+                    {
+                        report.Error = "连续多封邮件索引失败，已停止。" + ex.Message;
+                        break;
+                    }
+                }
                 catch (Exception ex)
                 {
                     // A single mail failure must not abort the whole build.
                     state.Failed++;
                     report.Failed++;
+                    consecutiveFailures++;
                     Logger.Error(
                         "Indexing one mail failed; continuing.", ex);
+                    if (consecutiveFailures >= 10)
+                    {
+                        report.Error = "连续多封邮件索引失败，已停止。" + ex.Message;
+                        break;
+                    }
                 }
 
                 state.Processed++;
@@ -223,7 +269,21 @@ namespace OutlookAiAssistant.SemanticSearch
                 }
             }
 
-            _client.ReportSync(null);
+            if (!report.Cancelled && report.ModelUnavailable)
+            {
+                Logger.Error("Semantic index build stopped early.", null);
+            }
+            else
+            {
+                try
+                {
+                    _client.ReportSync(null);
+                }
+                catch
+                {
+                    // Sync metadata is advisory only.
+                }
+            }
         }
 
         public void DeleteMail(string storeId, string entryId)

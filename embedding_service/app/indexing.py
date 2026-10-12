@@ -155,24 +155,27 @@ class Indexer:
         )
 
         chunk_texts = self._build_chunks(request, cleaned)
-        embedded = False
-        chunks: List[ChunkRecord] = []
-        try:
-            vectors = self._model.encode_documents(
-                chunk_texts,
-                titles=[request.subject] * len(chunk_texts),
-            )
-            embedded = True
-        except EmbeddingModelUnavailable as ex:
-            logger.warning(
-                "Storing mail %s without embeddings: %s",
-                request.entry_id, ex,
-            )
-            vectors = None
 
+        # The semantic index is only useful with vectors. If the model is
+        # unavailable we must fail loudly instead of writing thousands of
+        # vector-less rows that make the index look populated but return
+        # nothing. The add-in surfaces this error and stops the build.
+        if not self._model.available and not self._model.load():
+            raise EmbeddingModelUnavailable(
+                self._model.load_error
+                or "Embedding model is unavailable. Download it first."
+            )
+
+        vectors = self._model.encode_documents(
+            chunk_texts,
+            titles=[request.subject] * len(chunk_texts),
+        )
+        embedded = True
+
+        chunks: List[ChunkRecord] = []
         for position, text in enumerate(chunk_texts):
             vector: Optional[np.ndarray] = None
-            if vectors is not None and position < vectors.shape[0]:
+            if position < vectors.shape[0]:
                 vector = vectors[position]
             chunks.append(ChunkRecord(
                 mail_id=existing["id"] if existing is not None else 0,
@@ -181,7 +184,7 @@ class Indexer:
                 embedding=vector,
             ))
 
-        mail.index_status = "indexed" if embedded else "pending_embedding"
+        mail.index_status = "indexed"
         mail_id = self._db.upsert_mail(mail, chunks, _utc_now())
         return IndexMailResult(
             mail_id=mail_id,

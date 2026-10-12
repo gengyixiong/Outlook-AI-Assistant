@@ -128,8 +128,9 @@ AI 负责理解，Outlook 负责搜索。
    新安装默认使用 `https://api.openai.com/v1`、`gpt-5.6-luna` 和 `None`；模型可手动输入，Reasoning Effort 可选 None、Medium 或 Max。
 6. 如需联系人别名、公司或 Outlook 归类文件夹辅助搜索，在设置中点击“重建联系人索引”。
 7. 如需本地语义搜索：安装 Python 3.10–3.12 后，在发布包的 `embedding_service`
-   中依次运行 `setup-venv.cmd`、`download-model.cmd`，再运行 `start-service.cmd`，
-   然后在侧栏“语义搜索”页点击“建立 / 更新语义索引”。
+   中依次运行 `setup-venv.cmd`、`download-model.cmd`、`start-service.cmd`，
+   然后在侧栏“语义搜索”页点击“建立 / 更新语义索引”。模型未下载时界面会
+   明确提示，并提供“下载模型”按钮。
 
 安装不需要管理员权限。安装脚本会把插件复制到当前用户的 `%LOCALAPPDATA%\OutlookAiAssistant\app` 并写入当前用户注册表；安装完成后可以删除下载并解压的发布包目录。
 
