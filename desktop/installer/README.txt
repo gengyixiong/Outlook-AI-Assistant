@@ -1,4 +1,4 @@
-Outlook AI Assistant 0.6.4
+Outlook AI Assistant 0.6.5
 ==========================
 
 系统要求

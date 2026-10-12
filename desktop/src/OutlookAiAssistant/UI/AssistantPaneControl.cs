@@ -38,6 +38,8 @@ namespace OutlookAiAssistant.UI
         private Button _semanticStopButton;
         private Button _semanticDownloadModelButton;
         private Button _semanticStartServiceButton;
+        private Button _semanticRestartServiceButton;
+        private Button _semanticStopServiceButton;
         private Button _openServiceButton;
         private Label _semanticServiceStatus;
         private Label _semanticIndexStatus;
@@ -210,6 +212,22 @@ namespace OutlookAiAssistant.UI
             _semanticStartServiceButton.Margin = new Padding(3, 0, 3, 3);
             _semanticStartServiceButton.Click += SemanticStartServiceClicked;
             actions.Controls.Add(_semanticStartServiceButton);
+
+            _semanticRestartServiceButton = new Button();
+            _semanticRestartServiceButton.Text = "重启服务";
+            _semanticRestartServiceButton.AutoSize = true;
+            _semanticRestartServiceButton.MinimumSize = new Size(88, 29);
+            _semanticRestartServiceButton.Margin = new Padding(3, 0, 3, 3);
+            _semanticRestartServiceButton.Click += SemanticRestartServiceClicked;
+            actions.Controls.Add(_semanticRestartServiceButton);
+
+            _semanticStopServiceButton = new Button();
+            _semanticStopServiceButton.Text = "停止服务";
+            _semanticStopServiceButton.AutoSize = true;
+            _semanticStopServiceButton.MinimumSize = new Size(88, 29);
+            _semanticStopServiceButton.Margin = new Padding(3, 0, 3, 3);
+            _semanticStopServiceButton.Click += SemanticStopServiceClicked;
+            actions.Controls.Add(_semanticStopServiceButton);
 
             _semanticDownloadModelButton = new Button();
             _semanticDownloadModelButton.Text = "下载模型";
@@ -889,49 +907,139 @@ namespace OutlookAiAssistant.UI
                 return;
             }
 
-            if (!SemanticServiceLauncher.IsInstalled())
+            if (!ShowInstallHintIfMissing())
             {
-                MessageBox.Show(
-                    this,
-                    "尚未安装本地语义搜索服务。\r\n\r\n"
-                    + "请先解压发布包，在 embedding_service 目录中运行 "
-                    + "install-service.cmd 完成安装，然后回到这里点击“启动服务”。",
-                    "AI 邮件助手",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
                 return;
             }
 
             string startError = addIn.SemanticServiceLauncher.Start();
             if (!string.IsNullOrWhiteSpace(startError))
             {
-                MessageBox.Show(
-                    this,
-                    startError,
-                    "AI 邮件助手",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                ShowServiceError(startError);
                 return;
             }
 
-            // The service needs a few seconds to import PyTorch. Poll briefly
-            // so the status label reflects reality instead of staying "stopped".
-            _semanticServiceStatus.Text = "服务状态：正在启动…";
-            SetStatus("正在启动本地语义搜索服务…");
-            SetSemanticBusy(true, null);
+            await WaitForServiceAsync(addIn, "本地语义搜索服务已启动。");
+        }
+
+        private async void SemanticRestartServiceClicked(object sender, EventArgs e)
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || _semanticBusy)
+            {
+                return;
+            }
+
+            if (!ShowInstallHintIfMissing())
+            {
+                return;
+            }
+
+            SetSemanticBusy(true, "正在重启本地语义搜索服务…");
             try
             {
-                for (int attempt = 0; attempt < 30; attempt++)
+                string error = await Task.Factory.StartNew(
+                    delegate { return addIn.SemanticServiceLauncher.Restart(); },
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default);
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    ShowServiceError(error);
+                    return;
+                }
+
+                SetStatus("本地语义搜索服务已重启。");
+            }
+            finally
+            {
+                SetSemanticBusy(false, null);
+                RefreshSemanticIndexStatus();
+            }
+        }
+
+        private async void SemanticStopServiceClicked(object sender, EventArgs e)
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || _semanticBusy)
+            {
+                return;
+            }
+
+            SetSemanticBusy(true, "正在停止本地语义搜索服务…");
+            try
+            {
+                string error = await Task.Factory.StartNew(
+                    delegate { return addIn.SemanticServiceLauncher.Stop(); },
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default);
+                if (!string.IsNullOrWhiteSpace(error))
+                {
+                    ShowServiceError(error);
+                    return;
+                }
+
+                SetStatus("本地语义搜索服务已停止。");
+            }
+            finally
+            {
+                SetSemanticBusy(false, null);
+                RefreshSemanticIndexStatus();
+            }
+        }
+
+        private bool ShowInstallHintIfMissing()
+        {
+            if (SemanticServiceLauncher.IsInstalled())
+            {
+                return true;
+            }
+
+            MessageBox.Show(
+                this,
+                "尚未安装本地语义搜索服务。\r\n\r\n"
+                + "请先解压发布包，在 embedding_service 目录中运行 "
+                + "install-service.cmd 完成安装，然后回到这里点击“启动服务”。",
+                "AI 邮件助手",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return false;
+        }
+
+        private void ShowServiceError(string message)
+        {
+            SetStatus(message);
+            MessageBox.Show(
+                this,
+                message,
+                "AI 邮件助手",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+        }
+
+        /// <summary>
+        /// Waits for the service to answer. Loading PyTorch takes a while, so
+        /// poll for up to about a minute before giving up.
+        /// </summary>
+        private async Task WaitForServiceAsync(Connect addIn, string successMessage)
+        {
+            _semanticServiceStatus.Text = "服务状态：正在启动…";
+            SetSemanticBusy(true, "正在启动本地语义搜索服务…首次加载模型可能需要一分钟。");
+            try
+            {
+                for (int attempt = 0; attempt < 90; attempt++)
                 {
                     await Task.Delay(1000);
                     if (addIn.SemanticClient.GetStatus().Reachable)
                     {
-                        SetStatus("本地语义搜索服务已启动。");
+                        SetStatus(successMessage);
                         return;
                     }
                 }
 
-                SetStatus("服务启动较慢或失败，请查看弹出的服务窗口。");
+                SetStatus("服务启动较慢或失败。可点击“刷新状态”，"
+                    + "或在设置页打开日志目录查看原因。");
             }
             finally
             {
@@ -967,7 +1075,8 @@ namespace OutlookAiAssistant.UI
 
             if (!status.ModelAvailable)
             {
-                _semanticServiceStatus.Text = "服务状态：运行中；模型未就绪";
+                _semanticServiceStatus.Text = "服务状态：运行中；模型未就绪"
+                    + FormatDeviceSuffix(status);
                 _semanticServiceStatus.ForeColor = Color.FromArgb(176, 96, 0);
                 _semanticIndexStatus.Text =
                     "点击“下载模型”完成一次下载（需要联网，之后可离线使用）。"
@@ -979,7 +1088,7 @@ namespace OutlookAiAssistant.UI
             }
 
             _semanticServiceStatus.Text = "服务状态：运行中；模型就绪"
-                + "（" + status.Device + "）";
+                + FormatDeviceSuffix(status);
             _semanticServiceStatus.ForeColor = Color.FromArgb(0, 120, 60);
             _semanticIndexStatus.Text =
                 "索引：已索引 " + status.MailCount + " 封邮件，"
@@ -992,6 +1101,21 @@ namespace OutlookAiAssistant.UI
             _semanticIndexStatus.ForeColor = Color.DimGray;
         }
 
+        /// <summary>
+        /// Shows the compute device, which is auto-detected: an NVIDIA GPU
+        /// when available, otherwise CPU.
+        /// </summary>
+        private static string FormatDeviceSuffix(SemanticServiceStatus status)
+        {
+            string device = string.IsNullOrWhiteSpace(status.Device)
+                ? "未知"
+                : status.Device;
+            string reason = string.IsNullOrWhiteSpace(status.DeviceReason)
+                ? string.Empty
+                : "，" + status.DeviceReason;
+            return "（" + device + reason + "）";
+        }
+
         private void SetSemanticBusy(bool busy, string status)
         {
             _semanticBusy = busy;
@@ -999,6 +1123,8 @@ namespace OutlookAiAssistant.UI
             _semanticIndexButton.Enabled = !busy;
             _semanticDownloadModelButton.Enabled = !busy;
             _semanticStartServiceButton.Enabled = !busy;
+            _semanticRestartServiceButton.Enabled = !busy;
+            _semanticStopServiceButton.Enabled = !busy;
             _openServiceButton.Enabled = !busy;
             if (!busy)
             {

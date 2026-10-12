@@ -27,6 +27,30 @@ def default_product_root() -> Path:
     return Path.home() / ".local" / "share" / "OutlookAiAssistant"
 
 
+def apply_huggingface_cache_environment(model_dir: Path) -> None:
+    """Point Hugging Face at our own model directory.
+
+    Without this, snapshot_download and SentenceTransformer silently use the
+    default cache (%USERPROFILE%\\.cache\\huggingface), so the configured
+    model directory stays empty even though the model is downloaded. Setting
+    HF_HOME here makes everything land under our own path.
+
+    Only set it when the caller has not already chosen a location, so an
+    explicit HF_HOME still wins.
+    """
+
+    try:
+        model_dir = Path(model_dir)
+        hf_root = model_dir / "huggingface"
+        hf_root.mkdir(parents=True, exist_ok=True)
+        # HF_HOME is the root that contains hub/ and other caches.
+        os.environ.setdefault("HF_HOME", str(hf_root))
+    except OSError:
+        # A read-only or unusual path must not break startup; the default
+        # cache will be used instead.
+        pass
+
+
 # The model officially requires these prompts. Queries and documents use
 # different (asymmetric) prefixes; document titles are injected manually
 # because prompt_name="Document" only supplies "title: none".
@@ -44,8 +68,8 @@ class ServiceSettings:
     embedding_dim: int = 768
     # CPU float32 is the safe default on machines without a CUDA GPU.
     # The model is incompatible with float16 on every backend.
-    device: str = "cpu"
-    dtype: str = "float32"
+    device: str = "auto"
+    dtype: str = "auto"
     host: str = "127.0.0.1"
     port: int = 8765
 
@@ -89,6 +113,9 @@ class ServiceSettings:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.model_cache_dir.mkdir(parents=True, exist_ok=True)
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        # Point Hugging Face at our own model directory so the configured path
+        # is where the model actually lives.
+        apply_huggingface_cache_environment(self.model_cache_dir)
 
     @classmethod
     def from_env(cls) -> "ServiceSettings":

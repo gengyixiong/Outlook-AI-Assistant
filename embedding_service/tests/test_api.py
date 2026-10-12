@@ -248,3 +248,25 @@ def test_health_reports_local_paths(client):
         assert paths[key], "empty path hint: %s" % key
     # Paths must never point at an Outlook or mail-content location.
     assert "mail.db" in paths["database"]
+
+
+def test_health_reports_device_and_pid(client):
+    body = client.get("/health").json()
+    assert "device" in body
+    assert "device_reason" in body
+    assert "device_preference" in body
+    assert "pid" in body
+    assert isinstance(body["pid"], int)
+
+
+def test_shutdown_endpoint_requires_token(client):
+    assert client.post("/service/shutdown").status_code == 401
+
+
+def test_shutdown_endpoint_requests_stop(client):
+    calls = []
+    client.app.state.service.shutdown_callback = lambda: calls.append(True)
+    response = client.post("/service/shutdown", headers=auth())
+    assert response.status_code == 200
+    assert response.json()["stopping"] is True
+    assert calls == [True]

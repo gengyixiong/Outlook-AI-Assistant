@@ -18,6 +18,8 @@ The service never returns mail content for arbitrary ids other than through
 from __future__ import annotations
 
 import logging
+import os
+import threading
 import time
 from pathlib import Path
 from typing import List, Optional
@@ -123,6 +125,25 @@ class ServiceState:
         self.indexer = Indexer(self.database, self.model, settings)
         self.search = HybridSearch(self.database, self.model, settings)
         self.index_busy = False
+        # Resolve the device up front so /health can report it before the
+        # model is first used.
+        try:
+            from .embedding_model import detect_device
+
+            device, reason = detect_device(settings.device)
+            self.resolved_device = device
+            self.device_reason = reason
+        except Exception:
+            self.resolved_device = settings.device
+            self.device_reason = ""
+        self.shutdown_callback = None
+
+    def request_shutdown(self) -> None:
+        """Ask the server to stop. Used by the add-in's 'stop service'."""
+
+        callback = self.shutdown_callback
+        if callback is not None:
+            callback()
 
 
 def _model_is_cached(model) -> bool:
@@ -154,6 +175,19 @@ def create_app(
     app = FastAPI(title="Outlook AI Assistant Semantic Search", version="0.5.0")
     app.state.service = state
 
+    # Let the add-in stop the service through the API instead of hunting for
+    # the background process.
+    def _shutdown() -> None:
+        def _stop() -> None:
+            import time as _time
+
+            _time.sleep(0.2)
+            os._exit(0)
+
+        threading.Thread(target=_stop, daemon=True).start()
+
+    state.shutdown_callback = _shutdown
+
     def require_token(request: Request) -> None:
         if not auth_token:
             # No token configured (developer/test mode): allow loopback only.
@@ -177,13 +211,17 @@ def create_app(
             "model_id": settings.model_id,
             "model_available": state.model.available,
             "model_error": state.model.load_error,
-            "device": settings.device,
+            # The device actually in use after auto-detection, plus why.
+            "device": state.resolved_device or settings.device,
+            "device_reason": state.device_reason,
+            "device_preference": settings.device,
             "model_cached": _model_is_cached(state.model),
             "dtype": settings.dtype,
             "embedding_dim": settings.embedding_dim,
             "index_busy": state.index_busy,
             "index": stats,
-            "version": "0.5.0",
+            "version": "0.6.5",
+            "pid": os.getpid(),
             # Local path hints so the add-in can show and open them. These are
             # filesystem paths only; they contain no mail content.
             "paths": {
@@ -281,6 +319,17 @@ def create_app(
     @app.get("/stats", dependencies=[Depends(require_token)])
     def stats() -> dict:
         return state.database.stats()
+
+    @app.post("/service/shutdown", dependencies=[Depends(require_token)])
+    def shutdown_service() -> dict:
+        """Stop this service process.
+
+        The response is sent first; the process exits shortly after. The
+        add-in can then report 'stopped' and start it again on demand.
+        """
+
+        state.request_shutdown()
+        return {"stopping": True}
 
     @app.post("/index/meta", dependencies=[Depends(require_token)])
     def update_meta(payload: MetaPayload) -> dict:

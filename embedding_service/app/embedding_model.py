@@ -26,6 +26,47 @@ class EmbeddingModelUnavailable(RuntimeError):
     """Raised when the model cannot be loaded or used."""
 
 
+def detect_device(preferred: str = "auto") -> tuple:
+    """Return (device, reason) for the requested preference.
+
+    "auto" (the default) uses an NVIDIA GPU when PyTorch can see one, and
+    otherwise falls back to CPU. This keeps the service working on machines
+    with no GPU, an AMD GPU, or a CPU-only PyTorch build, without any manual
+    configuration.
+
+    Only CUDA is considered. AMD/ROCm is not usable on Windows in practice,
+    so it is deliberately not probed.
+    """
+
+    wanted = (preferred or "auto").strip().lower()
+    if wanted in ("cpu",):
+        return "cpu", "requested by configuration"
+
+    try:
+        import torch
+    except Exception as ex:
+        return "cpu", "torch is not installed (%s)" % ex
+
+    try:
+        cuda_available = bool(torch.cuda.is_available())
+    except Exception:
+        cuda_available = False
+
+    if wanted in ("cuda", "gpu"):
+        if cuda_available:
+            return "cuda", "requested and available"
+        return "cpu", "CUDA was requested but is not available; using CPU"
+
+    # auto
+    if cuda_available:
+        try:
+            name = torch.cuda.get_device_name(0)
+        except Exception:
+            name = "CUDA device"
+        return "cuda", "auto-detected NVIDIA GPU: %s" % name
+    return "cpu", "no CUDA GPU detected"
+
+
 class _ProgressReporter:
     """Factory for a tqdm subclass that forwards progress to a callback.
 
@@ -126,8 +167,8 @@ class EmbeddingModel:
     def __init__(
         self,
         model_id: str,
-        device: str = "cpu",
-        dtype: str = "float32",
+        device: str = "auto",
+        dtype: str = "auto",
         embedding_dim: int = 768,
     ) -> None:
         self.model_id = model_id
@@ -137,6 +178,9 @@ class EmbeddingModel:
         self._model = None
         self._load_error: Optional[str] = None
         self._lock = threading.RLock()
+        # Filled in by load(): the device actually used and why.
+        self.resolved_device: Optional[str] = None
+        self.device_reason: str = ""
 
     # ------------------------------------------------------------------
     @property
@@ -188,7 +232,10 @@ class EmbeddingModel:
                 return False
 
             try:
-                resolved_dtype = self._resolve_dtype(torch)
+                resolved_device, reason = detect_device(self.device)
+                self.resolved_device = resolved_device
+                self.device_reason = reason
+                resolved_dtype = self._resolve_dtype(torch, resolved_device)
                 local_only = bool(offline_if_cached and self.is_cached())
                 model_kwargs = {"dtype": resolved_dtype}
                 if local_only:
@@ -200,7 +247,7 @@ class EmbeddingModel:
                 # to skip those modules (270M vs 740M parameters).
                 self._model = SentenceTransformer(
                     self.model_id,
-                    device=self.device,
+                    device=resolved_device,
                     config_kwargs={
                         "vision_config": None,
                         "audio_config": None,
@@ -209,9 +256,10 @@ class EmbeddingModel:
                 )
                 self._load_error = None
                 logger.info(
-                    "Loaded embedding model %s on %s (%s)%s",
-                    self.model_id, self.device, resolved_dtype,
+                    "Loaded embedding model %s on %s (%s)%s - %s",
+                    self.model_id, resolved_device, resolved_dtype,
                     " [offline, from cache]" if local_only else "",
+                    reason,
                 )
                 return True
             except Exception as ex:  # pragma: no cover - environment dependent
@@ -294,20 +342,32 @@ class EmbeddingModel:
             )
         return "Failed to load embedding model: %s" % text
 
-    def _resolve_dtype(self, torch_module):
+    def _resolve_dtype(self, torch_module, device: Optional[str] = None):
         """Map the configured dtype to a torch dtype.
 
-        Only bfloat16 and float32 are valid; float16 is rejected explicitly.
-        CPU always uses float32 because bfloat16 is slow without native
-        support.
+        Only bfloat16 and float32 are valid; float16 is rejected explicitly
+        because the model's activations exceed float16's range and silently
+        produce NaN or degraded vectors.
+
+        On CUDA the default is bfloat16 (the model card's recommendation).
+        On CPU it is always float32. "auto" means "pick the safe default for
+        the resolved device".
         """
 
-        requested = (self.dtype or "float32").lower()
+        target_device = (device or self.device or "cpu").lower()
+        requested = (self.dtype or "auto").lower()
+
         if requested == "float16":
             logger.warning("float16 is unsafe for EmbeddingGemma 2; using float32")
             requested = "float32"
-        if self.device == "cpu":
-            requested = "float32"
+
+        if requested in ("auto", ""):
+            return (torch_module.bfloat16 if target_device.startswith("cuda")
+                    else torch_module.float32)
+
+        if target_device == "cpu":
+            # bfloat16 on CPU is slow without native support; force float32.
+            return torch_module.float32
         if requested in ("bfloat16", "bf16"):
             return torch_module.bfloat16
         return torch_module.float32

@@ -113,6 +113,8 @@ namespace OutlookAiAssistant.SemanticSearch
         public bool ModelCached { get; set; }
         public string ModelError { get; set; }
         public string Device { get; set; }
+        /// <summary>Why this device was chosen (auto-detection reason).</summary>
+        public string DeviceReason { get; set; }
         public int MailCount { get; set; }
         public int ChunkCount { get; set; }
         public int EmbeddedChunkCount { get; set; }
@@ -133,6 +135,7 @@ namespace OutlookAiAssistant.SemanticSearch
             ModelId = string.Empty;
             ModelError = string.Empty;
             Device = string.Empty;
+            DeviceReason = string.Empty;
             LastSyncAt = string.Empty;
             Message = string.Empty;
             ModelDir = string.Empty;

@@ -129,3 +129,30 @@ location and the data location can move independently.
   format, with the real email subject embedded as the document title.
 * `torchvision` and `pillow` are required even for text-only use because the
   multimodal processor imports them at load time.
+
+## Background service
+
+The add-in starts the service with `pythonw.exe`, so it runs resident in the
+background with no console window. Start, restart and stop are controlled
+from the Outlook pane (or the settings page). To run with a visible console
+for troubleshooting, set `OAA_SERVICE_CONSOLE=1` before starting Outlook.
+
+## GPU or CPU
+
+The compute device is auto-detected. With a usable NVIDIA GPU the service
+runs on CUDA in `bfloat16`; otherwise it falls back to CPU in `float32`.
+`setup-venv.cmd` installs the CUDA PyTorch build when `nvidia-smi` reports a
+GPU, and the CPU build otherwise (or if the CUDA install fails). AMD GPUs are
+treated as CPU because there is no usable ROCm path on Windows. Force a
+choice with `OAA_DEVICE=cpu` or `OAA_DEVICE=cuda`. The device actually in use
+is shown in the add-in and in `/health` (`device`, `device_reason`).
+
+## Where the model is stored
+
+The model is downloaded into the configured model directory
+(`%LOCALAPPDATA%\OutlookAiAssistant\models`). The service sets `HF_HOME` to
+point inside it, so nothing lands in the default
+`%USERPROFILE%\.cache\huggingface` location. Once the model is cached,
+startup loads it with `local_files_only`, so it never contacts Hugging Face
+again and works offline. A short `Fetching N files ... 0.00B` line at startup
+is a local cache check, not a download.

@@ -177,9 +177,37 @@ python -m pip install --upgrade pip
 if errorlevel 1 goto :failed
 
 echo.
-echo Installing PyTorch (CPU build). This is the largest step...
-python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-if errorlevel 1 goto :failed
+echo Installing PyTorch. This is the largest step...
+
+REM Choose a GPU or CPU build automatically. An NVIDIA GPU with a working
+REM driver gets the CUDA build; everything else (no GPU, AMD GPU, or a
+REM missing driver) gets the CPU build. Windows has no usable ROCm path, so
+REM AMD is intentionally treated as CPU.
+set "TORCH_INDEX=https://download.pytorch.org/whl/cpu"
+set "TORCH_LABEL=CPU"
+where nvidia-smi >nul 2>nul
+if not errorlevel 1 (
+  nvidia-smi -L >nul 2>nul
+  if not errorlevel 1 (
+    set "TORCH_INDEX=https://download.pytorch.org/whl/cu124"
+    set "TORCH_LABEL=NVIDIA CUDA (cu124)"
+  )
+)
+
+echo Selected build: %TORCH_LABEL%
+if "%TORCH_LABEL%"=="CPU" (
+  echo   No NVIDIA GPU detected, or nvidia-smi is unavailable.
+) else (
+  echo   NVIDIA GPU detected. The service will use it automatically.
+)
+echo.
+python -m pip install torch torchvision --index-url %TORCH_INDEX%
+if errorlevel 1 (
+  echo.
+  echo CUDA build failed to install; falling back to the CPU build...
+  python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+  if errorlevel 1 goto :failed
+)
 
 echo.
 echo Installing remaining dependencies...

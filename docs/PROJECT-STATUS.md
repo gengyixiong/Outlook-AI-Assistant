@@ -7,6 +7,22 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.6.5 改进：常驻服务、GPU 自动检测、模型目录修复
+
+- 修复模型目录为空：之前虽然配置了 `%LOCALAPPDATA%\OutlookAiAssistant\models`，
+  但 `snapshot_download` / `SentenceTransformer` 仍使用 Hugging Face 默认缓存
+  （`%USERPROFILE%\.cache\huggingface`），所以配置目录一直是空的。现在设置
+  `HF_HOME` 指向该目录，模型真正下载到这里。
+- 自动检测计算设备：有可用 NVIDIA CUDA 时用 GPU（bfloat16），否则回退到
+  CPU（float32）；`/health` 返回实际设备与选择原因，界面显示。
+- `setup-venv.cmd` 现在会检测 NVIDIA GPU：有则装 CUDA 版 PyTorch，
+  否则（或安装失败）回退到 CPU 版。
+- 服务改为后台常驻、无控制台窗口（用 `pythonw.exe` 启动）。需要排错时
+  设置 `OAA_SERVICE_CONSOLE=1` 可恢复可见窗口。
+- 语义搜索页新增“重启服务”“停止服务”，可完整控制服务生命周期；
+  `/service/shutdown` 端点支持优雅关闭。
+- 新增 GPU 检测、设备字段与关闭端点的测试。
+
 ## 0.6.4 改进：模型只下载一次，之后完全离线启动
 
 - 澄清：启动时看到的 `Fetching 15 files ... 0.00B` 是**本地缓存校验**，
@@ -184,11 +200,11 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - C# 单元测试：24/24 通过。
-- Python 单元测试：100/100 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
+- Python 单元测试：110/110 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.6.4.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.6.5.zip` 已生成。
 
 ## 尚需用户手动验收
 

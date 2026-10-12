@@ -129,7 +129,7 @@ def test_load_prefers_offline_when_cached(monkeypatch):
     # Pretend the snapshot is present and the runtime is importable.
     monkeypatch.setattr(model, "is_cached", lambda: True)
     monkeypatch.setattr(mod.EmbeddingModel, "_resolve_dtype",
-                        lambda self, torch: "float32")
+                        lambda self, torch, device=None: "float32")
 
     import sys, types
     fake_torch = types.ModuleType("torch")

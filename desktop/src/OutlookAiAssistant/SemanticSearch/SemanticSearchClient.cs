@@ -149,6 +149,7 @@ namespace OutlookAiAssistant.SemanticSearch
                 status.ModelCached = GetBool(root, "model_cached");
                 status.ModelError = GetString(root, "model_error");
                 status.Device = GetString(root, "device");
+                status.DeviceReason = GetString(root, "device_reason");
                 if (index != null)
                 {
                     status.MailCount = GetInt(index, "mail_count");
@@ -240,6 +241,16 @@ namespace OutlookAiAssistant.SemanticSearch
             payload["store_id"] = storeId ?? string.Empty;
             payload["entry_id"] = entryId ?? string.Empty;
             Send("POST", "/index/delete", _serializer.Serialize(payload), true);
+        }
+
+        /// <summary>
+        /// Asks the service to stop itself. The response arrives before the
+        /// process exits, so the caller should not treat a missing reply as a
+        /// failure.
+        /// </summary>
+        public void ShutdownService()
+        {
+            Send("POST", "/service/shutdown", "{}", true);
         }
 
         public void ClearIndex()
