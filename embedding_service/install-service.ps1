@@ -103,7 +103,19 @@ else {
   $setup = Join-Path $targetRoot "setup-venv.cmd"
   & cmd.exe /c "`"$setup`" --no-pause"
   if ($LASTEXITCODE -ne 0) {
-    throw "setup-venv.cmd failed with exit code $LASTEXITCODE. See the messages above."
+    throw @"
+setup-venv.cmd failed with exit code $LASTEXITCODE.
+
+Most common causes:
+  1. Python 3.13 or newer is installed. PyTorch has no prebuilt wheels for
+     it, so the install tries to compile from source and fails with
+     "Microsoft Visual C++ 14.0 or greater is required".
+     Fix: install Python 3.12 from https://www.python.org/downloads/ and
+     re-run install-service.cmd.
+  2. No real Python on PATH (only the Microsoft Store stub). Turn off the
+     python.exe / python3.exe aliases under Settings > Apps > Advanced app
+     settings > App execution aliases.
+"@
   }
 }
 

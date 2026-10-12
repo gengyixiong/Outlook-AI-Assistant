@@ -57,8 +57,12 @@ bearer token. The token is created automatically on first start.
 
 ### Prerequisites
 
-- Python 3.10–3.12 must be installed from python.org with
-  **Add python.exe to PATH** enabled.
+- **Python 3.10, 3.11 or 3.12** installed from python.org with
+  **Add python.exe to PATH** enabled. **Python 3.13+ does not work**:
+  PyTorch publishes no prebuilt wheel for it, so the install falls back to
+  compiling from source and fails with
+  "Microsoft Visual C++ 14.0 or greater is required". `setup-venv.cmd`
+  prefers a supported interpreter and refuses an unsupported one.
 - If `setup-venv.cmd` reports that Python was not found, or shows a Microsoft
   Store message, the `python` command is pointing at the Store stub. Disable
   the `python.exe` / `python3.exe` aliases under

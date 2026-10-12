@@ -1,5 +1,11 @@
 # Local semantic search service dependencies.
 #
+# PYTHON VERSION: use Python 3.10-3.12.
+#   PyTorch (and PyYAML and others) do not publish prebuilt wheels for
+#   Python 3.13+, so installing on a newer interpreter tries to build from
+#   source and fails with "Microsoft Visual C++ 14.0 or greater is required".
+#   setup-venv.cmd enforces this and refuses unsupported versions.
+#
 # Versions are pinned to the ranges that google/embeddinggemma-2 officially
 # requires (see the model's config_sentence_transformers.json):
 #   sentence-transformers >= 6.1.0

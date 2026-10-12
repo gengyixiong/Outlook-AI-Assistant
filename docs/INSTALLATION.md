@@ -134,6 +134,22 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 ## 语义搜索不可用
 
+### 第一步就报 “Microsoft Visual C++ 14.0 or greater is required”
+
+这说明电脑上的 Python **太新**（0.5.4 日志里的 Python 3.15）。PyTorch 目前
+**没有为 Python 3.13 及以上提供预编译安装包**，pip 只好从源码编译，
+而机器上没有 C++ 编译器，于是失败。
+
+解决：**安装 Python 3.12**（不要装 3.13/3.14/3.15）：
+
+1. 到 https://www.python.org/downloads/ 下载 **Python 3.12**。
+2. 安装时勾选 **Add python.exe to PATH**。
+3. 关闭并重新打开命令行窗口（让 PATH 生效）。
+4. 重新运行 `install-service.cmd`。
+
+`setup-venv.cmd` 会优先选用 3.12 / 3.11 / 3.10，并在检测到不受支持的版本时
+直接拒绝并给出提示，而不是尝试编译。
+
 ### 第一步就报 “Python was not found / Microsoft Store”
 
 这说明 `python` 指向了 Microsoft Store 的占位程序，而不是真正的安装。

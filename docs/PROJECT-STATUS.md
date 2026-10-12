@@ -7,6 +7,17 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.5.5 修复：拦截过新的 Python
+
+- 修复安装失败：目标电脑上的 Python 3.15 太新，PyTorch/PyYAML 都没有
+  对应预编译 wheel，pip 转而从源码编译并报
+  `Microsoft Visual C++ 14.0 or greater is required`。
+- `setup-venv.cmd` 现在优先选择 3.12 / 3.11 / 3.10，并在检测到 3.13+ 时
+  直接拒绝，给出“安装 Python 3.12”的明确指引，不再尝试编译。
+- `install-service.ps1` 失败时列出两条最常见原因（Python 过新、
+  Microsoft Store 别名）。
+- `requirements.txt` 与文档明确标注仅支持 Python 3.10-3.12。
+
 ## 0.5.4 改进：语义服务安装到固定位置
 
 - 新增 `install-service.cmd` / `install-service.ps1`：把语义服务（含
@@ -109,7 +120,7 @@ classic Outlook 用户级 COM 加载项。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.5.4.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.5.5.zip` 已生成。
 
 ## 尚需用户手动验收
 
