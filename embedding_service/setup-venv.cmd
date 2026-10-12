@@ -225,7 +225,19 @@ if "%TORCH_LABEL%"=="CPU" (
   echo   NVIDIA GPU detected. The service will use it automatically.
 )
 echo.
-python -m pip install torch torchvision --index-url %TORCH_INDEX%
+
+if not "%TORCH_LABEL%"=="CPU" (
+  "%VENV_DIR%\Scripts\python.exe" -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)" >nul 2>nul
+  if errorlevel 1 (
+    "%VENV_DIR%\Scripts\python.exe" -c "import torch" >nul 2>nul
+    if not errorlevel 1 (
+      echo Existing PyTorch is CPU-only. Uninstalling old build to enable CUDA...
+      "%VENV_DIR%\Scripts\python.exe" -m pip uninstall -y torch torchvision >nul 2>nul
+    )
+  )
+)
+
+python -m pip install --timeout 300 --retries 10 torch torchvision --index-url %TORCH_INDEX%
 if errorlevel 1 (
   echo.
   if "%TORCH_LABEL%"=="CPU" (
@@ -236,16 +248,26 @@ if errorlevel 1 (
   echo ******************************************************************
   echo WARNING: the CUDA build could not be installed.
   echo Falling back to the CPU build; the GPU will NOT be used.
-  echo Most likely your NVIDIA driver is too old for CUDA 13.0.
+  echo Most likely your NVIDIA driver is too old for CUDA 13.0,
+  echo or the download timed out.
   echo Update the driver from https://www.nvidia.com/download/ and then
   echo re-run setup-venv.cmd to enable GPU acceleration.
   echo ******************************************************************
-  python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+  python -m pip install --timeout 300 --retries 10 torch torchvision --index-url https://download.pytorch.org/whl/cpu
   if errorlevel 1 goto :failed
 )
 
 REM Verify what actually got installed and say so plainly.
 python -c "import torch;print('torch:',torch.__version__);print('CUDA available:',torch.cuda.is_available())"
+if not "%TORCH_LABEL%"=="CPU" (
+  "%VENV_DIR%\Scripts\python.exe" -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)" >nul 2>nul
+  if not errorlevel 1 (
+    echo.
+    echo ============================================================
+    echo SUCCESS: NVIDIA CUDA ^(cu130^) acceleration is ready!
+    echo ============================================================
+  )
+)
 
 echo.
 echo Installing remaining dependencies...

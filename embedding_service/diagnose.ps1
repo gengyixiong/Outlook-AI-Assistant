@@ -1,4 +1,4 @@
-﻿# =====================================================================
+# =====================================================================
 #  Outlook AI Assistant - 诊断脚本 (diagnose.ps1)
 #
 #  用途：一次性收集排查"启动服务无效 / 模型未就绪 / /health 打不开"
@@ -149,9 +149,12 @@ else {
 Add-Header "7. 正在运行的服务进程"
 $procs = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
   Where-Object {
-    $_.Name -in @("python.exe", "pythonw.exe") -and
+    ($_.Name -in @("python.exe", "pythonw.exe") -and
     $_.CommandLine -and
-    $_.CommandLine -like "*app.main*"
+    $_.CommandLine -like "*app.main*") -or
+    ($_.Name -eq "cmd.exe" -and
+    $_.CommandLine -and
+    $_.CommandLine -like "*start-service.cmd*")
   }
 if ($procs) {
   foreach ($p in $procs) {
@@ -212,21 +215,44 @@ try {
 catch {
   Add-Line "py 启动器不可用"
 }
+$venvPython = Join-Path $serviceDir ".venv\Scripts\python.exe"
+if (Test-Path -LiteralPath $venvPython) {
+  Add-Line "--- 虚拟环境 PyTorch 状态 ---"
+  try {
+    $torchInfo = & $venvPython -c "import torch; print('  torch: ' + torch.__version__); print('  CUDA available: ' + str(torch.cuda.is_available())); print('  device count: ' + str(torch.cuda.device_count() if torch.cuda.is_available() else 0)); print('  device name: ' + (torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'N/A'))" 2>&1
+    $torchInfo | ForEach-Object { Add-Line $_ }
+  }
+  catch {
+    Add-Line ("  检查 torch 失败: {0}" -f $_.Exception.Message)
+  }
+}
 
 # ---------------------------------------------------------------------
 Add-Header "11. NVIDIA GPU 检测"
-$smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
-if ($smi) {
-  Add-Line ("nvidia-smi: {0}" -f $smi.Source)
+$smiPath = $null
+$candidates = @(
+  "$env:SystemRoot\System32\nvidia-smi.exe",
+  "$env:ProgramFiles\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+  "${env:ProgramW6432}\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+)
+foreach ($c in $candidates) {
+  if (Test-Path -LiteralPath $c) { $smiPath = $c; break }
+}
+if (-not $smiPath) {
+  $smi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+  if ($smi) { $smiPath = $smi.Source }
+}
+if ($smiPath) {
+  Add-Line ("nvidia-smi: {0}" -f $smiPath)
   try {
-    & nvidia-smi -L 2>&1 | ForEach-Object { Add-Line $_ }
+    & $smiPath -L 2>&1 | ForEach-Object { Add-Line $_ }
   }
   catch {
     Add-Line ("执行 nvidia-smi 失败: {0}" -f $_.Exception.Message)
   }
 }
 else {
-  Add-Line "未找到 nvidia-smi（无 NVIDIA 驱动，或不在 PATH 中）。"
+  Add-Line "未找到 nvidia-smi（无 NVIDIA 驱动，或不在已知路径中）。"
 }
 try {
   $gpus = Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |

@@ -30,6 +30,7 @@ namespace OutlookAiAssistant.UnitTests
             Run("Builds settings dialog before first display", BuildsSettingsDialog);
             Run("Builds a visible semantic result card", BuildsVisibleResultCard);
             Run("Builds safe hidden-start arguments", BuildsHiddenStartArguments);
+            Run("Builds safe kill encoded command", BuildsKillEncodedCommand);
             Run("Trims quoted history from stored messages", TrimsQuotedHistory);
             Run("Keeps ordinary From lines", KeepsOrdinaryFromLines);
             Run("Builds separate history and current prompt", BuildsConversationPrompt);
@@ -222,6 +223,21 @@ namespace OutlookAiAssistant.UnitTests
             {
                 SemanticServiceLauncher.BuildHiddenStartArguments("x", "");
             });
+        }
+
+        private static void BuildsKillEncodedCommand()
+        {
+            string script = SemanticServiceLauncher.BuildKillPowerShellScript();
+            True(script.Contains("python.exe"), "kill script must target python.exe");
+            True(script.Contains("pythonw.exe"), "kill script must target pythonw.exe");
+            True(script.Contains("start-service.cmd"), "kill script must target start-service.cmd");
+            True(script.Contains("8765"), "kill script must target port 8765 listeners");
+            True(script.Contains("Stop-Process"), "kill script must stop processes");
+
+            string encoded = SemanticServiceLauncher.BuildKillEncodedCommand();
+            byte[] bytes = Convert.FromBase64String(encoded);
+            string decoded = Encoding.Unicode.GetString(bytes);
+            Equal(script, decoded);
         }
 
         private static Button FindButton(Control root, string text)

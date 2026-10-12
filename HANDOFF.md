@@ -1,7 +1,7 @@
 # 交接文档（HANDOFF）
 
 > 面向接手的 Agent / 开发者。读完这一份即可继续工作。
-> 最后更新：2026-10-12，对应版本 **0.7.2**，分支 `agent/semantic-search-v0.5.0`
+> 最后更新：2026-10-12，对应版本 **0.7.3**，分支 `agent/semantic-search-v0.5.0`
 
 ---
 
@@ -9,7 +9,7 @@
 
 为 Classic Outlook 的 C# COM 加载项新增了**完全本地运行的语义邮件搜索**
 （Python 服务 + EmbeddingGemma 2 + SQLite + 混合检索）。
-功能已打通，**但 GPU（CUDA）路径尚未在真机验证通过**，这是当前最优先事项。
+功能已打通，停止服务问题已修复，**GPU（CUDA）通道升级已完善并待用户真机验证**。
 
 ---
 
@@ -17,7 +17,7 @@
 
 ```text
 Outlook-AI-Assistant/
-├── VERSION                          # ★ 唯一版本源（0.7.2）
+├── VERSION                          # ★ 唯一版本源（0.7.3）
 ├── AGENTS.md                        # 项目约束（隐私/兼容性）
 ├── README.md                        # 用户向说明
 ├── docs/
@@ -226,6 +226,8 @@ CUDA UMD Version 13.3          ← 驱动完全支持 cu130
 | 8 | 在 Downloads 建 venv | 用户双击了 `setup-venv.cmd` | 检测临时目录并引导用 `install-service.cmd` |
 | 9 | Python 3.15 装不上 | PyTorch 无 3.13+ 预编译包 | 脚本只接受 3.10–3.12 |
 | 10 | **CUDA 未生效** | `cu124` 通道无 torch 2.14 wheel | 改 `cu130`（**待真机验证**） |
+| 11 | **停止服务按钮报未在预期时间停止** | ① Outlook 启动时若服务未运行，客户端缓存空 token，优雅关闭报 401；② 兜底杀进程 PowerShell 命令未转义双引号导致参数解析报错；③ `start-service.cmd` 后台运行停在 pause 产生僵尸 cmd 且锁日志 | ① 客户端支持动态读取 token 并在 401 时刷新重试；② 强杀命令改用 Base64 `-EncodedCommand`；③ 后台通过 `OAA_NO_PAUSE=1` 跳过 pause |
+| 12 | **升级安装时 CUDA 未能启用** | ① `setup.ps1` 因 `.venv` 已存在跳过步骤 4；② pip 面对已安装同版本 `+cpu` 不会重新下载 CUDA wheel | ① `setup.ps1` 增加 `Test-VenvNeedsCudaUpgrade`；② `setup-venv.cmd` 安装 CUDA 前先卸载旧 CPU torch，加 `--timeout 300 --retries 10` |
 
 ---
 

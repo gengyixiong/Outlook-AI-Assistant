@@ -7,6 +7,34 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.7.3 修复：停止服务失败与现有环境升级 CUDA
+
+- **修复“停止服务”报“服务未能在预期时间内停止”**：
+  1. 根因 1（鉴权凭据未同步）：Outlook 启动时若服务未在运行，`SemanticSearchClient`
+     记录了空令牌；当用户启动服务后点击“停止服务”，客户端发送的 `/service/shutdown`
+     请求未带有效令牌，被 FastAPI 拒绝并返回 401 Unauthorized。现已支持令牌动态读取，
+     并在 401 时自动重新从磁盘读取令牌重试一次。同时完善了优雅关闭的连接关闭捕获。
+  2. 根因 2（进程强杀命令语法错误）：`SemanticServiceLauncher.KillServiceProcesses`
+     传递给 `powershell.exe` 的命令存在未转义嵌套双引号，导致 PowerShell 解析报错
+     `InvalidArgument: A positional parameter cannot be found that accepts argument 'OR'`，
+     外部进程以退出码 1 失败且未杀死任何进程。现改为 PowerShell `-EncodedCommand`
+     (Base64 UTF-16LE 编码)，彻底杜绝命令行引号转义陷阱，并增加同一位宽下的直接 .NET 进程终止。
+  3. 根因 3（后台 cmd.exe 僵尸进程卡在 pause）：后台隐式启动 `start-service.cmd` 时，
+     若服务退出，脚本会停留在 `pause` 并永远锁住 `service-start.log`。现通过 `OAA_NO_PAUSE=1`
+     环境变量让后台模式跳过 `pause`，确保服务停止后 cmd 进程立即干净退出。
+- **让 NVIDIA GPU 机器能顺利切换/启用 CUDA**：
+  1. 根因（安装脚本跳过已存在的 CPU venv）：在已安装过 0.7.0 CPU 版本的机器上运行 `setup.cmd`，
+     因 `.venv\Scripts\python.exe` 已存在，步骤 4 直接跳过，即使检测到 NVIDIA 显卡也
+     永远不会执行 CUDA 安装。现新增 `Test-VenvNeedsCudaUpgrade`，若检测到 NVIDIA GPU
+     但现有环境为 CPU 版 PyTorch，自动触发依赖更新。
+  2. 根因（pip 面对同版本 CPU torch 不会重新下载 CUDA wheel）：在现有 venv 中，
+     `torch 2.14.1+cpu` 已满足 `torch`，直接 `pip install` 会提示 `Requirement already satisfied`。
+     现在 `setup-venv.cmd` 中若检测到当前环境未启用 CUDA，会自动先卸载旧的 CPU torch，
+     再拉取 CUDA wheel。
+  3. 增加 pip 下载容错：针对约 2.5 GB 的 CUDA wheel 增加 `--timeout 300 --retries 10`。
+  4. 诊断脚本 `diagnose.ps1` 增强：增加对 venv 内 torch 版本与 CUDA 可用性的直接检测，
+     并将 `nvidia-smi` 探测扩展至 System32 与 NVSMI 目录。
+
 ## 0.7.2 修复：有 NVIDIA GPU 却仍用 CPU
 
 - 定位根因：安装脚本选用的 CUDA 通道是 **cu124**，但 torch 2.14.x 在

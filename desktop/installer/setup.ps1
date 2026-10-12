@@ -1,4 +1,4 @@
-﻿# =====================================================================
+# =====================================================================
 #  Outlook AI Assistant - unified installer  (setup.ps1)
 #
 #  One entry point for the whole installation. Safe to run repeatedly:
@@ -94,6 +94,44 @@ function Test-ServiceInstalled {
 function Test-VenvReady {
   return (Test-Path -LiteralPath `
     (Join-Path $serviceDir ".venv\Scripts\python.exe"))
+}
+
+function Test-VenvNeedsCudaUpgrade {
+  $pythonExe = Join-Path $serviceDir ".venv\Scripts\python.exe"
+  if (-not (Test-Path -LiteralPath $pythonExe)) { return $false }
+
+  $hasNvidia = $false
+  $nvSmi = $null
+  $candidates = @(
+    "$env:SystemRoot\System32\nvidia-smi.exe",
+    "$env:ProgramFiles\NVIDIA Corporation\NVSMI\nvidia-smi.exe",
+    "${env:ProgramW6432}\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+  )
+  foreach ($c in $candidates) {
+    if (Test-Path -LiteralPath $c) { $nvSmi = $c; break }
+  }
+  if (-not $nvSmi) {
+    $where = (Get-Command nvidia-smi -ErrorAction SilentlyContinue)
+    if ($where) { $nvSmi = $where.Source }
+  }
+  if ($nvSmi) {
+    & $nvSmi -L >$null 2>&1
+    if ($LASTEXITCODE -eq 0) { $hasNvidia = $true }
+  }
+
+  if (-not $hasNvidia) { return $false }
+
+  try {
+    $out = & $pythonExe -c "import torch; print(torch.cuda.is_available())" 2>$null
+    if ($out -notmatch "True") {
+      return $true
+    }
+  }
+  catch {
+    return $true
+  }
+
+  return $false
 }
 
 function Test-ModelReady {
@@ -304,10 +342,17 @@ else {
 # ---------------------------------------------------------------------
 Write-Step "4/5  Python 依赖环境 (venv)"
 
-$needVenv = $Force -or (-not (Test-VenvReady))
+$cudaUpgradeNeeded = Test-VenvNeedsCudaUpgrade
+$needVenv = $Force -or (-not (Test-VenvReady)) -or $cudaUpgradeNeeded
 
 if ($CheckOnly) {
-  if (Test-VenvReady) { Write-Ok "依赖环境已就绪" }
+  if (Test-VenvReady) {
+    if ($cudaUpgradeNeeded) {
+      Write-WarnMsg "依赖环境已就绪但未启用 CUDA (检测到 NVIDIA 显卡，需更新为 cu130)"
+    } else {
+      Write-Ok "依赖环境已就绪"
+    }
+  }
   else { Write-WarnMsg "依赖环境未创建" }
 }
 elseif (-not $needVenv) {
@@ -320,7 +365,11 @@ elseif (-not (Test-ServiceInstalled)) {
   Write-ErrMsg "跳过：服务代码尚未安装。"
 }
 else {
-  Write-Action "创建虚拟环境并安装依赖（首次较慢，含 PyTorch）"
+  if ($cudaUpgradeNeeded) {
+    Write-Action "检测到 NVIDIA 显卡但现有环境未启用 CUDA，正在更新为 CUDA (cu130) 环境..."
+  } else {
+    Write-Action "创建虚拟环境并安装依赖（首次较慢，含 PyTorch）"
+  }
   $setup = Join-Path $serviceDir "setup-venv.cmd"
   & cmd.exe /c "`"$setup`" --no-pause"
   if ($LASTEXITCODE -ne 0) {
@@ -329,7 +378,7 @@ else {
   }
   else {
     $script:Changed = $true
-    Write-Ok "依赖环境已创建"
+    Write-Ok "依赖环境已创建 / 更新"
   }
 }
 

@@ -164,3 +164,17 @@ def test_setup_venv_uses_a_cuda_channel_that_exists():
     assert "NVSMI" in text or "System32\nvidia-smi.exe" in text
     # A silent GPU->CPU downgrade hid this bug once already.
     assert "WARNING" in text
+    # When upgrading from a CPU-only venv on a GPU machine, the old torch must be uninstalled.
+    assert "pip uninstall -y torch torchvision" in text
+    # The wheel is 2.5 GB; timeout and retries must be specified.
+    assert "--timeout 300" in text
+    assert "--retries 10" in text
+
+
+def test_start_service_supports_no_pause_environment_flag():
+    """When launched by the add-in in the background, pause must be skipped to avoid zombie processes."""
+    text = (SERVICE_DIR / "start-service.cmd").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert "OAA_NO_PAUSE" in text
+

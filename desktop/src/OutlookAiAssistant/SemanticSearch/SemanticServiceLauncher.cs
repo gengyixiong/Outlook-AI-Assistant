@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Threading;
 using OutlookAiAssistant.Diagnostics;
 
@@ -257,6 +258,7 @@ namespace OutlookAiAssistant.SemanticSearch
                     info.UseShellExecute = false;
                     info.CreateNoWindow = true;
                     info.WorkingDirectory = InstalledServiceDirectory;
+                    info.EnvironmentVariables["OAA_NO_PAUSE"] = "1";
                 }
 
                 Process.Start(info);
@@ -302,7 +304,7 @@ namespace OutlookAiAssistant.SemanticSearch
 
             // Fallback: terminate the process holding the service.
             string error = KillServiceProcesses();
-            for (int attempt = 0; attempt < 8; attempt++)
+            for (int attempt = 0; attempt < 12; attempt++)
             {
                 Thread.Sleep(250);
                 if (!IsRunning())
@@ -345,6 +347,34 @@ namespace OutlookAiAssistant.SemanticSearch
         }
 
         /// <summary>
+        /// Builds the PowerShell script that targets service processes and port listeners.
+        /// Exposed for testing.
+        /// </summary>
+        public static string BuildKillPowerShellScript()
+        {
+            return
+                "$ErrorActionPreference = 'SilentlyContinue'; "
+                + "Get-CimInstance Win32_Process | Where-Object { "
+                + "(($_.Name -eq 'python.exe' -or $_.Name -eq 'pythonw.exe') -and "
+                + "$_.CommandLine -like '*app.main*' -and "
+                + "$_.CommandLine -like '*embedding_service*') -or "
+                + "($_.Name -eq 'cmd.exe' -and $_.CommandLine -like '*start-service.cmd*') "
+                + "} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; "
+                + "Get-NetTCPConnection -LocalPort 8765 -State Listen | ForEach-Object { "
+                + "Stop-Process -Id $_.OwningProcess -Force }";
+        }
+
+        /// <summary>
+        /// Encodes the kill script as a base64 UTF-16LE string for PowerShell -EncodedCommand.
+        /// This eliminates all command-line quotation and parsing pitfalls.
+        /// </summary>
+        public static string BuildKillEncodedCommand()
+        {
+            string script = BuildKillPowerShellScript();
+            return Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        }
+
+        /// <summary>
         /// Kills python processes running our service module. Used only when
         /// the graceful shutdown path fails.
         /// </summary>
@@ -352,24 +382,29 @@ namespace OutlookAiAssistant.SemanticSearch
         {
             try
             {
-                // Target only python processes started from our install dir
-                // running app.main, so unrelated Python work is not touched.
-                string query =
-                    "Get-CimInstance Win32_Process -Filter \"Name='python.exe' "
-                    + "OR Name='pythonw.exe'\" | "
-                    + "Where-Object { $_.CommandLine -like '*app.main*' -and "
-                    + "$_.CommandLine -like '*embedding_service*' } | "
-                    + "ForEach-Object { Stop-Process -Id $_.ProcessId -Force }";
+                // First try direct .NET process termination for same-bitness processes.
+                KillMatchingProcessesByName("python");
+                KillMatchingProcessesByName("pythonw");
 
+                // Use PowerShell -EncodedCommand to reliably kill across bitness
+                // boundaries (e.g. 32-bit Outlook managing 64-bit Python) and cmd.exe wrapper.
+                string encodedCommand = BuildKillEncodedCommand();
                 ProcessStartInfo info = new ProcessStartInfo();
                 info.FileName = "powershell.exe";
-                info.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command \""
-                    + query + "\"";
+                info.Arguments = "-NoProfile -ExecutionPolicy Bypass -EncodedCommand "
+                    + encodedCommand;
                 info.UseShellExecute = false;
                 info.CreateNoWindow = true;
+                info.RedirectStandardError = true;
                 using (Process process = Process.Start(info))
                 {
+                    string err = process.StandardError.ReadToEnd();
                     process.WaitForExit(10000);
+                    if (process.ExitCode != 0 && !string.IsNullOrWhiteSpace(err))
+                    {
+                        Logger.Error("PowerShell kill returned exit code "
+                            + process.ExitCode + ": " + err, null);
+                    }
                 }
 
                 return null;
@@ -378,6 +413,53 @@ namespace OutlookAiAssistant.SemanticSearch
             {
                 Logger.Error("Terminating the service process failed.", ex);
                 return "无法结束服务进程：" + ex.Message;
+            }
+        }
+
+        private static void KillMatchingProcessesByName(string processName)
+        {
+            try
+            {
+                Process[] processes = Process.GetProcessesByName(processName);
+                if (processes == null)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < processes.Length; i++)
+                {
+                    using (Process p = processes[i])
+                    {
+                        try
+                        {
+                            string path = null;
+                            try
+                            {
+                                path = p.MainModule == null
+                                    ? null
+                                    : p.MainModule.FileName;
+                            }
+                            catch
+                            {
+                                // Access denied or bitness mismatch; PowerShell handles this.
+                            }
+
+                            if (!string.IsNullOrEmpty(path)
+                                && path.IndexOf(
+                                    InstalledServiceDirectory,
+                                    StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                p.Kill();
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+            }
+            catch
+            {
             }
         }
 

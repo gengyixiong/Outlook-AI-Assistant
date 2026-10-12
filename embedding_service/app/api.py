@@ -208,7 +208,7 @@ def create_app(
         def _stop() -> None:
             import time as _time
 
-            _time.sleep(0.2)
+            _time.sleep(0.5)
             os._exit(0)
 
         threading.Thread(target=_stop, daemon=True).start()

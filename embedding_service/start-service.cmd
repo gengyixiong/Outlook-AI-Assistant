@@ -31,5 +31,9 @@ echo.
 
 echo.
 echo The service has stopped.
+if "%OAA_NO_PAUSE%"=="1" (
+  endlocal
+  exit /b 0
+)
 pause
 endlocal

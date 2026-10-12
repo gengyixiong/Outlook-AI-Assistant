@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
+using OutlookAiAssistant.Diagnostics;
 
 namespace OutlookAiAssistant.SemanticSearch
 {
@@ -54,7 +55,7 @@ namespace OutlookAiAssistant.SemanticSearch
 
         private readonly JavaScriptSerializer _serializer;
         private readonly string _baseUrl;
-        private readonly string _token;
+        private string _token;
 
         public SemanticSearchClient(string baseUrl, string token)
         {
@@ -62,6 +63,15 @@ namespace OutlookAiAssistant.SemanticSearch
             _serializer.MaxJsonLength = 32 * 1024 * 1024;
             _baseUrl = NormalizeBaseUrl(baseUrl);
             _token = token ?? string.Empty;
+        }
+
+        private string GetEffectiveToken()
+        {
+            if (!string.IsNullOrWhiteSpace(_token))
+            {
+                return _token;
+            }
+            return ReadServiceToken();
         }
 
         public string BaseUrl
@@ -250,7 +260,19 @@ namespace OutlookAiAssistant.SemanticSearch
         /// </summary>
         public void ShutdownService()
         {
-            Send("POST", "/service/shutdown", "{}", true);
+            try
+            {
+                Send("POST", "/service/shutdown", "{}", true);
+            }
+            catch (SemanticServiceException ex)
+            {
+                if (ex.StatusCode == (int)HttpStatusCode.Unauthorized
+                    || ex.StatusCode == (int)HttpStatusCode.Forbidden)
+                {
+                    throw;
+                }
+                Logger.Info("Shutdown request sent or process already stopped: " + ex.Message);
+            }
         }
 
         public void ClearIndex()
@@ -418,6 +440,16 @@ namespace OutlookAiAssistant.SemanticSearch
             string body,
             bool requireToken)
         {
+            return SendCore(method, path, body, requireToken, true);
+        }
+
+        private string SendCore(
+            string method,
+            string path,
+            string body,
+            bool requireToken,
+            bool allowTokenRetry)
+        {
             string url = _baseUrl + path;
             HttpWebRequest request = null;
             try
@@ -428,9 +460,13 @@ namespace OutlookAiAssistant.SemanticSearch
                 request.ReadWriteTimeout = RequestTimeoutMilliseconds;
                 request.Proxy = null;
                 request.KeepAlive = false;
-                if (requireToken && !string.IsNullOrWhiteSpace(_token))
+                if (requireToken)
                 {
-                    request.Headers["Authorization"] = "Bearer " + _token;
+                    string effectiveToken = GetEffectiveToken();
+                    if (!string.IsNullOrWhiteSpace(effectiveToken))
+                    {
+                        request.Headers["Authorization"] = "Bearer " + effectiveToken;
+                    }
                 }
 
                 if (body != null)
@@ -455,9 +491,20 @@ namespace OutlookAiAssistant.SemanticSearch
             }
             catch (WebException ex)
             {
+                int statusCode = GetStatusCode(ex);
+                if (allowTokenRetry && requireToken && statusCode == (int)HttpStatusCode.Unauthorized)
+                {
+                    string freshToken = ReadServiceToken();
+                    if (!string.IsNullOrWhiteSpace(freshToken) && freshToken != _token)
+                    {
+                        _token = freshToken;
+                        return SendCore(method, path, body, requireToken, false);
+                    }
+                }
+
                 throw new SemanticServiceException(
                     BuildErrorMessage(ex),
-                    GetStatusCode(ex));
+                    statusCode);
             }
             finally
             {
