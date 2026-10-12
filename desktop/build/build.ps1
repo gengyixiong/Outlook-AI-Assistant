@@ -214,8 +214,32 @@ if (-not $SkipPackage) {
     -Destination $packageDocs
   Copy-Item -LiteralPath (Join-Path $desktopRoot "..\docs\INSTALLATION.md") `
     -Destination $packageDocs
+  Copy-Item -LiteralPath (Join-Path $desktopRoot "..\docs\SEMANTIC-SEARCH.md") `
+    -Destination $packageDocs
 
-  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.4.1.zip"
+  # Ship the local semantic search service alongside the add-in. The .venv
+  # and the model cache are intentionally excluded: they are large and are
+  # created per machine by setup-venv.cmd / download-model.cmd.
+  $serviceSource = Join-Path $desktopRoot "..\embedding_service"
+  $serviceTarget = Join-Path $packageRoot "embedding_service"
+  New-Item -ItemType Directory -Path $serviceTarget -Force | Out-Null
+  Copy-Item -LiteralPath (Join-Path $serviceSource "README.md") `
+    -Destination $serviceTarget
+  Copy-Item -LiteralPath (Join-Path $serviceSource "requirements.txt") `
+    -Destination $serviceTarget
+  foreach ($script in @(
+      "setup-venv.cmd", "start-service.cmd", "download-model.cmd")) {
+    Copy-Item -LiteralPath (Join-Path $serviceSource $script) `
+      -Destination $serviceTarget
+  }
+  Copy-Item -LiteralPath (Join-Path $serviceSource "app") `
+    -Destination $serviceTarget -Recurse
+  # Strip any stray caches the copy may have picked up.
+  Get-ChildItem -LiteralPath $serviceTarget -Recurse -Directory `
+    -Filter "__pycache__" -ErrorAction SilentlyContinue |
+    ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+
+  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.5.0.zip"
   if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
   }

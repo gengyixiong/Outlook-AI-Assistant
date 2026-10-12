@@ -1,4 +1,4 @@
-Outlook AI Assistant 0.4.1
+Outlook AI Assistant 0.5.0
 ==========================
 
 系统要求
@@ -6,6 +6,7 @@ Outlook AI Assistant 0.4.1
 - Windows 10/11
 - Microsoft classic Outlook 2016 或更高版本
 - .NET Framework 4.8（Windows 10/11 通常已包含）
+- 语义搜索（可选）：Python 3.10-3.12
 
 安装
 ----
@@ -16,6 +17,16 @@ Outlook AI Assistant 0.4.1
 5. 在右侧栏“设置”页填写 OpenAI-compatible Base URL、API Key、Model 和 Reasoning Effort。
    新安装默认使用 https://api.openai.com/v1、gpt-5.6-luna 和 None；模型可手动输入，Reasoning Effort 可选 None、Medium 或 Max。
 6. 如需联系人称呼搜索，可在设置中点击“重建联系人索引”；该操作不会后台运行。
+
+本地语义搜索（可选）
+--------------------
+1. 安装 Python 3.10-3.12。
+2. 进入 embedding_service 目录。
+3. 运行 setup-venv.cmd 安装依赖（CPU 版 PyTorch）。
+4. 运行 download-model.cmd 下载并缓存模型（约 1.5 GB）。
+5. 运行 start-service.cmd 启动本地服务（仅监听 127.0.0.1）。
+6. 在 Outlook 侧栏“语义搜索”页点击“建立 / 更新语义索引”。
+不安装此组件时，原有功能完全不受影响。
 
 更新
 ----
@@ -35,5 +46,6 @@ Outlook AI Assistant 0.4.1
 - 搜索功能只发送用户输入的搜索描述和已校验的 Contact Index，不发送候选邮件、搜索结果或邮件正文。
 - AI 返回的联系人 ID 必须在本地索引中精确命中，才能转换为邮箱条件。
 - 同一搜索计划可在宽松、推荐、精确三档之间本地切换，无需再次请求 API。
+- 本地语义搜索完全在本机运行：邮件正文与向量只保存在本地 SQLite，不上传云端；本地服务仅监听 127.0.0.1 并使用随机 Token 鉴权。
 - 邮件搜索、索引和结果显示均由本机 Outlook 完成。
 - API Key 通过 Windows DPAPI 为当前 Windows 用户加密。

@@ -190,6 +190,18 @@ namespace OutlookAiAssistant.Configuration
                 settings.MaxEmailCharacters = 40000;
             }
 
+            if (settings.SemanticIndexMonths < 1
+                || settings.SemanticIndexMonths > 120)
+            {
+                settings.SemanticIndexMonths = 12;
+            }
+
+            if (settings.SemanticIndexMaxMails < 100
+                || settings.SemanticIndexMaxMails > 100000)
+            {
+                settings.SemanticIndexMaxMails = 3000;
+            }
+
             return settings;
         }
 

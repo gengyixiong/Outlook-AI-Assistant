@@ -8,6 +8,7 @@ using OutlookAiAssistant.Diagnostics;
 using OutlookAiAssistant.EntityIndex;
 using OutlookAiAssistant.OutlookIntegration;
 using OutlookAiAssistant.Search;
+using OutlookAiAssistant.SemanticSearch;
 using OutlookAiAssistant.Summary;
 using OutlookAiAssistant.UI;
 using Office = Microsoft.Office.Core;
@@ -44,6 +45,9 @@ namespace OutlookAiAssistant.AddIn
         public SearchPlanFormatter SearchPlanFormatter { get; private set; }
         public ContactIndexStore ContactIndexStore { get; private set; }
         public ContactIndexService ContactIndexService { get; private set; }
+        public SemanticSearchClient SemanticClient { get; private set; }
+        public SemanticIndexService SemanticIndexService { get; private set; }
+        public OutlookMailLocator MailLocator { get; private set; }
 
         public void OnConnection(
             object application,
@@ -80,6 +84,13 @@ namespace OutlookAiAssistant.AddIn
                     new OutlookContactScanner(_application),
                     new ContactProfileExtractor(aiClient, SettingsStore),
                     ContactIndexStore);
+                SemanticClient = new SemanticSearchClient(
+                    null,
+                    SemanticSearchClient.ReadServiceToken());
+                SemanticIndexService = new SemanticIndexService(
+                    _application,
+                    SemanticClient);
+                MailLocator = new OutlookMailLocator(_application);
                 Logger.Info("Outlook add-in connected.");
             }
             catch (Exception ex)
@@ -223,6 +234,21 @@ namespace OutlookAiAssistant.AddIn
             {
                 Settings = settings;
             }
+        }
+
+        /// <summary>
+        /// Builds the UI-facing semantic search facade. The token is re-read on
+        /// every call so a service restart (which rotates the token) recovers
+        /// without restarting Outlook.
+        /// </summary>
+        public SemanticSearchFacade CreateSemanticFacade()
+        {
+            SemanticSearchClient client = new SemanticSearchClient(
+                null,
+                SemanticSearchClient.ReadServiceToken());
+            return new SemanticSearchFacade(
+                client,
+                MailLocator);
         }
 
         private void EnsureTaskPane()

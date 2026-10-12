@@ -25,6 +25,14 @@ Outlook UI
                                 ├─ 推荐 AQS
                                 └─ 精确 AQS
                                      └─ OutlookSearchService → Explorer.Search
+       └─ 语义搜索页（新增）
+            ├─ SemanticSearchFacade
+            │    ├─ SemanticSearchClient ──HTTP(127.0.0.1)──► embedding_service
+            │    └─ OutlookMailLocator → GetItemFromID → MailItem.Display()
+            └─ SemanticIndexService
+                 └─ OutlookMailScanner（仅 UI 线程访问 COM）
+                      ├─ MAPIFolder.GetTable() 只读元数据
+                      └─ MailItem 正文（仅需新建/更新时）
 ```
 
 三个功能的数据链路有意分开：
@@ -35,6 +43,8 @@ Outlook UI
   联系人的少量代表邮件。
 - 搜索链路没有 `EmailSnapshot` 或 `MailItem` 参数，只发送用户描述和已经
   保存、验证的 Contact Index，不上传搜索候选或结果。
+- 本地语义搜索链路不向任何云端发送邮件内容；正文与向量只在本机
+  Python 服务与本地 SQLite 之间流动。
 
 ## 分层职责
 
@@ -46,12 +56,17 @@ Outlook UI
 - 构建并显示右侧自定义任务窗格。
 - 提供 Home / Message 功能区开关。
 - 组装各服务，但不承载业务逻辑。
+- 创建语义搜索门面（`CreateSemanticFacade`），每次重新读取本地服务 Token，
+  使服务重启后无需重启 Outlook。
 
 ### `UI`
 
-- `AssistantPaneControl.cs`：摘要、搜索、设置三个页面。
-- `SettingsForm.cs`：OpenAI-compatible Base URL、API Key、可编辑 Model、Reasoning Effort、摘要身份和联系人索引
-  状态/手动重建。
+- `AssistantPaneControl.cs`：摘要、AQS 搜索、语义搜索、设置四个页面。
+  语义搜索页显示真实结果卡片（标题、发件人、日期、文件夹、片段）
+  并提供“打开邮件”和“Outlook 搜索”按钮。
+- `SettingsForm.cs`：OpenAI-compatible Base URL、API Key、可编辑 Model、
+  Reasoning Effort、摘要身份、联系人索引状态/手动重建，以及语义索引范围、
+  增量同步、重新构建、删除本地索引和状态查看。
 
 UI 只协调用户动作。可测试的转换逻辑必须留在服务层。
 
@@ -126,6 +141,36 @@ UI 只协调用户动作。可测试的转换逻辑必须留在服务层。
 
 模型的原始 AQS 或 DASL 永远不会直接执行。
 
+### `SemanticSearch`（新增）
+
+本地语义检索层，与云端 AI 完全解耦：
+
+- `SemanticSearchClient.cs`：loopback-only HTTP 客户端，负责与
+  Python 服务通信。强制只使用 `127.0.0.1`，使用共享 Token 鉴权，
+  服务不可用时返回友好错误而不抛出崩溃性异常。
+- `SemanticIndexService.cs`：索引编排。在 UI 线程枚举候选元数据，
+  逐封读取正文并发送给本地服务；支持进度、取消与单封失败跳过。
+- `OutlookMailScanner.cs`：使用 `MAPIFolder.GetTable()` 优先读取元数据，
+  只在需要时读取 `MailItem` 正文；遵守 COM 线程限制并释放所有临时引用。
+- `OutlookMailLocator.cs`：`GetItemFromID` 定位原邮件并用
+  `InternetMessageId` 等元数据校验身份，绝不打开同标题的其他邮件；
+  失败时提示用户并回退到 Outlook 原生搜索。
+- `SemanticSearchFacade.cs`：UI 门面，把服务响应转为展示数据，
+  并集中处理错误，保证服务未运行时 Outlook 不崩溃。
+
+### `embedding_service/`（Python，新增）
+
+本地语义服务，详见 `docs/SEMANTIC-SEARCH.md`：
+
+- `app/embedding_model.py`：EmbeddingGemma 2 文本编码器封装，仅文本、
+  CPU float32 默认、官方非对称 prompt、文档注入真实标题。
+- `app/database.py`：SQLite 元数据、片段、向量（BLOB）与 FTS5 全文索引。
+- `app/text_utils.py`：分块与 CJK 友好分词（弥补 FTS5 trigram 对中文和
+  短术语的不足）。
+- `app/search.py`：语义检索 + 关键词检索 + RRF 融合。
+- `app/indexing.py`：分块、向量化与每封邮件事务写入。
+- `app/api.py`：FastAPI 端点，loopback + Bearer Token。
+
 ## COM 注册
 
 安装器在当前用户注册以下对象：
@@ -151,6 +196,8 @@ COM 类位于 `HKCU\Software\Classes`，因此安装不需要管理员权限。
 - 生产源码以 .NET Framework 4.8 为目标，并保持 C# 5 兼容。
 - Office PIA 从本机 GAC 自动定位。
 - 当前实现仅支持 classic Outlook for Windows。
+- 本地语义服务使用独立的 Python 虚拟环境；加载项不依赖任何 NuGet 包。
+- Python 服务不可用不影响原有功能。
 
 参考：
 

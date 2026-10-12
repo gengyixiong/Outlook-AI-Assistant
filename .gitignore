@@ -21,6 +21,12 @@
 **/contact-index.json
 **/contact-index.new.json
 **/contact-index-*.json
+**/semantic-index/
+**/semantic-service-token
+embedding_service/.venv/
+embedding_service/**/__pycache__/
+embedding_service/.pytest_cache/
+.pytest_cache/
 
 # .NET / Office build outputs
 desktop/build/Debug/

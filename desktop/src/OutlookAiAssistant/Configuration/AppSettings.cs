@@ -19,6 +19,12 @@ namespace OutlookAiAssistant.Configuration
         public string IdentityEmailAddresses { get; set; }
         public string IdentityAliases { get; set; }
 
+        // Semantic index settings. The embedding model itself runs in the
+        // Python service; these values only control what the add-in scans.
+        public int SemanticIndexMonths { get; set; }
+        public int SemanticIndexMaxMails { get; set; }
+        public bool SemanticIndexIncludeSent { get; set; }
+
         public AppSettings()
         {
             ProviderId = string.Empty;
@@ -31,6 +37,9 @@ namespace OutlookAiAssistant.Configuration
             MaxEmailCharacters = 40000;
             IdentityEmailAddresses = string.Empty;
             IdentityAliases = string.Empty;
+            SemanticIndexMonths = 12;
+            SemanticIndexMaxMails = 3000;
+            SemanticIndexIncludeSent = true;
         }
 
         public AppSettings Copy()
@@ -46,7 +55,10 @@ namespace OutlookAiAssistant.Configuration
                 SummaryLanguage = SummaryLanguage,
                 MaxEmailCharacters = MaxEmailCharacters,
                 IdentityEmailAddresses = IdentityEmailAddresses,
-                IdentityAliases = IdentityAliases
+                IdentityAliases = IdentityAliases,
+                SemanticIndexMonths = SemanticIndexMonths,
+                SemanticIndexMaxMails = SemanticIndexMaxMails,
+                SemanticIndexIncludeSent = SemanticIndexIncludeSent
             };
         }
     }

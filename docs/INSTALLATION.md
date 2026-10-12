@@ -6,12 +6,13 @@
 - classic Outlook 2016 或更高版本
 - .NET Framework 4.8
 - Outlook 安装中包含 Office Primary Interop Assemblies
+- 语义搜索需要 Python 3.10–3.12（可选；不安装则仅使用原有功能）
 
 本项目不支持 new Outlook。
 
 ## 安装
 
-1. 解压 `Outlook-AI-Assistant-v0.4.1.zip`。
+1. 解压 `Outlook-AI-Assistant-v0.5.0.zip`。
 2. 完全退出 Outlook，在任务管理器中确认没有 `OUTLOOK.EXE`。
 3. 双击 `Install.cmd`。
 4. 重新启动 classic Outlook。
@@ -50,6 +51,25 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 %LOCALAPPDATA%\OutlookAiAssistant\contact-index.json
 ```
 
+## 建立语义索引（可选）
+
+语义搜索需要额外的本地 Python 组件。不安装时，原有功能不受影响。
+
+1. 安装 Python 3.10–3.12（`python.org`）。
+2. 进入发布包中的 `embedding_service` 目录。
+3. 双击 `setup-venv.cmd`，等待依赖安装完成（CPU 版 PyTorch，约数百 MB）。
+4. 双击 `download-model.cmd`，首次会下载模型（约 1.5 GB）并缓存到：
+
+```text
+%LOCALAPPDATA%\OutlookAiAssistant\models
+```
+
+5. 双击 `start-service.cmd` 启动服务；它会监听 `127.0.0.1:8765`。
+6. 在 Outlook 侧栏“语义搜索”页点击“建立 / 更新语义索引”。
+
+索引范围和最大邮件数可在“设置 > 语义索引”中调整。模型下载完成后，
+语义搜索可完全离线运行。
+
 ## 看不到侧栏
 
 依次检查：
@@ -67,6 +87,20 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 如果 Outlook 把加载项标记为慢速或禁用，请在
 `File > Manage COM Add-ins` 中重新启用。不要直接修改系统策略。
 
+## 语义搜索不可用
+
+1. 打开“语义搜索”页，点击“检查本地服务”，确认服务已在运行。
+2. 如果提示服务未运行，重新双击 `embedding_service\start-service.cmd`。
+3. 查看服务日志：
+
+```text
+%LOCALAPPDATA%\OutlookAiAssistant\logs\semantic-service.log
+```
+
+4. 如果提示“模型不可用”，先运行 `download-model.cmd`。
+5. 如果提示“没有找到匹配的邮件”，可能是索引尚未建立，或描述过于宽泛。
+6. 服务不可用不会影响 Executive Brief、联系人索引和 Outlook 原生搜索。
+
 ## 搜索结果不完整
 
 加载项使用 Outlook Instant Search，因此结果依赖本机索引：
@@ -83,18 +117,19 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 2. 解压新发布包。
 3. 运行新包中的 `Install.cmd`。
 
-用户设置、API Key、联系人索引和日志位于安装 DLL 之外，会保留。
+用户设置、API Key、联系人索引、语义索引和日志位于安装 DLL 之外，会保留。
 
 ## 卸载
 
 退出 Outlook 后运行 `Uninstall.cmd`。
 
-默认保留设置、加密 API Key 和联系人索引。要同时删除全部本地数据：
+默认保留设置、加密 API Key、联系人索引和语义索引。要同时删除全部本地数据：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
   -File .\uninstall.ps1 -RemoveSettings
 ```
 
-该操作会永久删除设置、加密密钥、联系人索引、索引备份和日志。
+该操作会永久删除设置、加密密钥、联系人索引、语义索引（含本地邮件正文副本
+与向量）、索引备份和日志。Outlook 中的原始邮件不受影响。
 

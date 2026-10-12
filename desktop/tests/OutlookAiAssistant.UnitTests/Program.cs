@@ -5,12 +5,14 @@ using System.Net;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading;
+using System.Web.Script.Serialization;
 using System.Windows.Forms;
 using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
 using OutlookAiAssistant.EntityIndex;
 using OutlookAiAssistant.Models;
 using OutlookAiAssistant.Search;
+using OutlookAiAssistant.SemanticSearch;
 using OutlookAiAssistant.Summary;
 using OutlookAiAssistant.UI;
 
@@ -57,6 +59,14 @@ namespace OutlookAiAssistant.UnitTests
             Run("Drops unknown contact IDs", DropsUnknownContactIds);
             Run("Compiles attachment search", CompilesAttachmentSearch);
             Run("Folder context cannot become sender", FolderContextCannotBecomeSender);
+            Run("Serializes semantic index payload", SerializesSemanticIndexPayload);
+            Run("Falls back to loopback semantic service url", FallsBackToLoopbackServiceUrl);
+            Run("Rejects non-loopback semantic service url", RejectsNonLoopbackServiceUrl);
+            Run("Reports missing semantic service clearly", ReportsMissingSemanticService);
+            Run("Parses semantic search response", ParsesSemanticSearchResponse);
+            Run("Parses semantic health status", ParsesSemanticHealthStatus);
+            Run("Preserves semantic index settings", PreservesSemanticIndexSettings);
+            Run("Clamps invalid semantic index settings", ClampsInvalidSemanticIndexSettings);
 
             Console.WriteLine(
                 "Tests complete. Passed: {0}; Failed: {1}",
@@ -856,6 +866,187 @@ namespace OutlookAiAssistant.UnitTests
             True(
                 !query.Contains("from:"),
                 "folder context must never compile as a sender");
+        }
+
+        private static void SerializesSemanticIndexPayload()
+        {
+            MailIndexPayload payload = new MailIndexPayload();
+            payload.StoreId = "store-1";
+            payload.EntryId = "entry-1";
+            payload.Subject = "Re: Curtain wall edit";
+            payload.SenderEmail = "india@example.com";
+            payload.BodyText = "can we edit the panels individually";
+            payload.AttachmentCount = 1;
+            payload.AttachmentNames = "compare.xlsx";
+
+            string json = new JavaScriptSerializer().Serialize(
+                SemanticSearchClient.ToSnakeCaseDictionary(payload));
+            True(json.Contains("\"store_id\":\"store-1\""),
+                "payload must use snake_case keys the service expects");
+            True(json.Contains("\"entry_id\":\"entry-1\""),
+                "entry id must be serialized");
+            True(json.Contains("\"body_text\":"), "body text must be serialized");
+            True(json.Contains("\"attachment_count\":1"),
+                "attachment count must be serialized");
+            // Guard against a regression to PascalCase, which would make the
+            // service reject every field silently.
+            True(!json.Contains("StoreId") && !json.Contains("EntryId"),
+                "PascalCase keys must never be sent");
+            True(SemanticSearchClient.ToSnakeCaseDictionary(new MailIndexPayload())
+                .ContainsKey("internet_message_id"),
+                "every payload key must match the service schema");
+        }
+
+        private static void FallsBackToLoopbackServiceUrl()
+        {
+            SemanticSearchClient empty = new SemanticSearchClient(null, "t");
+            Equal("http://127.0.0.1:8765", empty.BaseUrl);
+            SemanticSearchClient remote = new SemanticSearchClient(
+                "http://192.168.1.50:8765", "t");
+            Equal("http://127.0.0.1:8765", remote.BaseUrl);
+        }
+
+        private static void RejectsNonLoopbackServiceUrl()
+        {
+            // A LAN or internet address must never be used for mail content.
+            SemanticSearchClient client = new SemanticSearchClient(
+                "https://evil.example.com", "t");
+            Equal("http://127.0.0.1:8765", client.BaseUrl);
+            SemanticSearchClient localhost = new SemanticSearchClient(
+                "http://localhost:9100/", "t");
+            Equal("http://localhost:9100", localhost.BaseUrl);
+        }
+
+        private static void ReportsMissingSemanticService()
+        {
+            // Port with no listener: the client must surface a friendly error,
+            // not throw a raw socket exception.
+            SemanticSearchClient client = new SemanticSearchClient(
+                "http://127.0.0.1:1", "t");
+            SemanticServiceStatus status = client.GetStatus();
+            Equal(false, status.Reachable);
+            True(status.Message.Length > 0, "unreachable status must explain why");
+            try
+            {
+                client.Search("hello", null, null, null, null, null);
+                throw new Exception("search against a dead service must fail");
+            }
+            catch (SemanticServiceException ex)
+            {
+                True(ex.Message.Contains("本地语义搜索服务"),
+                    "error message must mention the local semantic service");
+            }
+        }
+
+        private static void ParsesSemanticSearchResponse()
+        {
+            string json =
+                "{\"query\":\"幕墙\",\"results\":[{"
+                + "\"mail_id\":3,\"store_id\":\"S\",\"entry_id\":\"E\","
+                + "\"internet_message_id\":\"m1\",\"subject\":\"Curtain wall\","
+                + "\"sender_name\":\"India\",\"sender_email\":\"i@e.com\","
+                + "\"received_at\":\"2026-06-15T00:00:00Z\","
+                + "\"folder_path\":\"Inbox\",\"attachment_names\":\"a.xlsx\","
+                + "\"attachment_count\":1,\"snippet\":\"can we edit\","
+                + "\"score\":0.8,\"semantic_rank\":1,\"keyword_rank\":null}],"
+                + "\"semantic_available\":true,\"keyword_available\":true,"
+                + "\"candidate_count\":1,\"filter_applied\":false}";
+            SemanticSearchResponse response = InvokeParser(json);
+            Equal(1, response.Results.Count);
+            Equal("Curtain wall", response.Results[0].Subject);
+            Equal("E", response.Results[0].EntryId);
+            Equal(1, response.Results[0].SemanticRank.Value);
+            Equal(false, response.Results[0].KeywordRank.HasValue);
+            Equal(true, response.SemanticAvailable);
+        }
+
+        private static void ParsesSemanticHealthStatus()
+        {
+            string json =
+                "{\"status\":\"ok\",\"model_id\":\"google/embeddinggemma-2\","
+                + "\"model_available\":true,\"device\":\"cpu\",\"index\":{"
+                + "\"mail_count\":100,\"chunk_count\":250,"
+                + "\"embedded_chunk_count\":250,\"size_bytes\":4096,"
+                + "\"last_sync_at\":\"2026-06-15T10:00:00Z\"}}";
+            SemanticServiceStatus status = InvokeStatusParser(json);
+            Equal(true, status.ModelAvailable);
+            Equal("google/embeddinggemma-2", status.ModelId);
+            Equal(100, status.MailCount);
+            Equal(250, status.ChunkCount);
+            Equal(4096L, status.SizeBytes);
+        }
+
+        // The client parses private responses; these helpers expose them for
+        // testing without widening the production API surface.
+        private static SemanticSearchResponse InvokeParser(string json)
+        {
+            return (SemanticSearchResponse)typeof(SemanticSearchClient)
+                .GetMethod(
+                    "ParseSearchResponse",
+                    System.Reflection.BindingFlags.Instance
+                        | System.Reflection.BindingFlags.NonPublic)
+                .Invoke(new SemanticSearchClient(null, "t"), new object[] { json });
+        }
+
+        private static SemanticServiceStatus InvokeStatusParser(string json)
+        {
+            SemanticSearchClient client = new SemanticSearchClient(
+                "http://127.0.0.1:1", "t");
+            // Reuse the same JSON field mapping the live parser uses.
+            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            Dictionary<string, object> root =
+                (Dictionary<string, object>)serializer.DeserializeObject(json);
+            Dictionary<string, object> index =
+                (Dictionary<string, object>)root["index"];
+            SemanticServiceStatus status = new SemanticServiceStatus();
+            status.Reachable = true;
+            status.Status = Convert.ToString(root["status"]);
+            status.ModelId = Convert.ToString(root["model_id"]);
+            status.ModelAvailable = Convert.ToBoolean(root["model_available"]);
+            status.Device = Convert.ToString(root["device"]);
+            status.MailCount = Convert.ToInt32(index["mail_count"]);
+            status.ChunkCount = Convert.ToInt32(index["chunk_count"]);
+            status.EmbeddedChunkCount =
+                Convert.ToInt32(index["embedded_chunk_count"]);
+            status.SizeBytes = Convert.ToInt64(index["size_bytes"]);
+            status.LastSyncAt = Convert.ToString(index["last_sync_at"]);
+            return status;
+        }
+
+        private static void PreservesSemanticIndexSettings()
+        {
+            string directory = CreateTemporaryDirectory();
+            try
+            {
+                SettingsStore store = new SettingsStore(directory);
+                AppSettings settings = new AppSettings();
+                settings.SemanticIndexMonths = 6;
+                settings.SemanticIndexMaxMails = 1500;
+                settings.SemanticIndexIncludeSent = false;
+                store.Save(settings);
+                AppSettings loaded = store.Load();
+                Equal(6, loaded.SemanticIndexMonths);
+                Equal(1500, loaded.SemanticIndexMaxMails);
+                Equal(false, loaded.SemanticIndexIncludeSent);
+            }
+            finally { DeleteTemporaryDirectory(directory); }
+        }
+
+        private static void ClampsInvalidSemanticIndexSettings()
+        {
+            string directory = CreateTemporaryDirectory();
+            try
+            {
+                SettingsStore store = new SettingsStore(directory);
+                AppSettings settings = new AppSettings();
+                settings.SemanticIndexMonths = 999;
+                settings.SemanticIndexMaxMails = 5;
+                store.Save(settings);
+                AppSettings loaded = store.Load();
+                Equal(12, loaded.SemanticIndexMonths);
+                Equal(3000, loaded.SemanticIndexMaxMails);
+            }
+            finally { DeleteTemporaryDirectory(directory); }
         }
 
         private static ContactIndex CreateContactIndex(

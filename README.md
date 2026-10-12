@@ -10,6 +10,7 @@
 2. 用户输入自然语言描述后，AI 负责理解搜索意图；加载项在本地把意图转换为受控的 Outlook AQS 查询。
 3. 联系人、别名、Outlook 归类文件夹和附件线索只用于辅助理解搜索目标，最终邮件搜索由 Outlook 本地 Instant Search 执行。
 4. 联系人索引只在用户手动点击“重建联系人索引”时更新，不后台扫描、不监听新邮件。
+5. 新增本地语义搜索：用户可直接用中文描述邮件内容，由本机模型与混合检索找到最相关的原始邮件，并一键在 Outlook 中打开。
 
 ## 适配环境
 
@@ -73,15 +74,48 @@ Outlook AI Assistant 会把这类描述转换为可执行的本地搜索：
 %LOCALAPPDATA%\OutlookAiAssistant\contact-index.json
 ```
 
-### 3. Privacy-first
+### 3. 本地语义搜索（新增）
+
+很多时候你只记得邮件的内容大意，却完全不记得邮件里用了什么词。例如：
+
+```text
+之前印度客户问过幕墙玻璃 Panel 能不能单独编辑的邮件
+```
+
+而邮件原文可能是：
+
+```text
+Regarding the curtain wall edit, can we also edit the Panels individually?
+```
+
+“语义搜索”页会用完全在本机运行的模型理解这两种描述在语义上的相关性，
+返回**真实**的原始邮件：
+
+- 中文描述可以直接找到英文邮件，不需要共享关键词。
+- 结合语义向量、SQLite 全文关键词（含中文与短术语）和邮件元数据。
+- 结果按相关度排序，显示真实标题、发件人、日期、文件夹和正文片段。
+- 点击“打开邮件”直接在 Outlook 中打开对应原始邮件；
+  失败时可一键回退到 Outlook 原生搜索。
+
+关键隐私保证：
+
+- `google/embeddinggemma-2` 模型在本机 Python 进程中运行。
+- 邮件正文与向量只保存在本机 SQLite，**绝不**发送到云端 Embedding API。
+- 本地服务只监听 `127.0.0.1`，并使用本地随机 Token 鉴权。
+- 不安装这个可选组件时，原有功能完全不受影响。
+
+详见 [docs/SEMANTIC-SEARCH.md](docs/SEMANTIC-SEARCH.md)。
+
+### 4. Privacy-first
 
 AI 负责理解，Outlook 负责搜索。
 
 - 搜索不会上传整个邮箱、候选邮件正文、附件内容或 Outlook 搜索结果。
 - 邮件搜索结果不发送给 AI 做二次排序，最终查询由 Classic Outlook 本地 Instant Search 完成。
+- 语义搜索完全在本地运行，不依赖任何外部 LLM，也不上传邮件内容。
 - Executive Brief 只在用户主动点击后读取当前邮件及其 Conversation 上下文。
 - 联系人索引只保留帮助识别联系人和搜索意图所需的轻量信息，不保存完整邮箱内容。
-- 不依赖 Microsoft Graph、EWS、SQLite、Vector Database 或 RAG。
+- 不依赖 Microsoft Graph、EWS 或云端 Vector Database。
 - API Key 使用 Windows DPAPI 加密，只能由当前 Windows 用户解密。
 
 ## 如何安装
@@ -93,6 +127,9 @@ AI 负责理解，Outlook 负责搜索。
 5. 在右侧栏“设置”中填写 OpenAI-compatible Base URL、API Key、Model 和 Reasoning Effort。
    新安装默认使用 `https://api.openai.com/v1`、`gpt-5.6-luna` 和 `None`；模型可手动输入，Reasoning Effort 可选 None、Medium 或 Max。
 6. 如需联系人别名、公司或 Outlook 归类文件夹辅助搜索，在设置中点击“重建联系人索引”。
+7. 如需本地语义搜索：安装 Python 3.10–3.12 后，在发布包的 `embedding_service`
+   中依次运行 `setup-venv.cmd`、`download-model.cmd`，再运行 `start-service.cmd`，
+   然后在侧栏“语义搜索”页点击“建立 / 更新语义索引”。
 
 安装不需要管理员权限。安装脚本会把插件复制到当前用户的 `%LOCALAPPDATA%\OutlookAiAssistant\app` 并写入当前用户注册表；安装完成后可以删除下载并解压的发布包目录。
 

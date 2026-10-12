@@ -6,6 +6,7 @@ using OutlookAiAssistant.AddIn;
 using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
 using OutlookAiAssistant.EntityIndex;
+using OutlookAiAssistant.SemanticSearch;
 
 namespace OutlookAiAssistant.UI
 {
@@ -32,6 +33,17 @@ namespace OutlookAiAssistant.UI
         private Label _apiHelp;
         private Label _indexStatus;
         private Button _rebuildIndex;
+
+        // Semantic index management.
+        private Label _semanticStatus;
+        private NumericUpDown _semanticMonths;
+        private NumericUpDown _semanticMaxMails;
+        private CheckBox _semanticIncludeSent;
+        private Button _semanticSyncButton;
+        private Button _semanticRebuildButton;
+        private Button _semanticDeleteButton;
+        private Button _semanticRefreshButton;
+        private bool _semanticBusy;
 
         public AppSettings SavedSettings { get; private set; }
 
@@ -61,6 +73,7 @@ namespace OutlookAiAssistant.UI
             BuildInterface();
             LoadSettings();
             RefreshIndexStatus();
+            RefreshSemanticStatus();
         }
 
         private void BuildInterface()
@@ -76,7 +89,7 @@ namespace OutlookAiAssistant.UI
             root.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             root.Padding = new Padding(18);
             root.ColumnCount = 2;
-            root.RowCount = 13;
+            root.RowCount = 15;
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 155F));
             root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
             scroll.Controls.Add(root);
@@ -186,10 +199,115 @@ namespace OutlookAiAssistant.UI
             cancel.DialogResult = DialogResult.Cancel;
             buttons.Controls.Add(save);
             buttons.Controls.Add(cancel);
+
+            // ---- Semantic index management ----
+            _semanticStatus = new Label();
+            _semanticStatus.AutoSize = true;
+            _semanticStatus.MaximumSize = new Size(520, 0);
+            AddRow(root, 13, "语义索引", BuildSemanticPanel());
+
             root.Controls.Add(buttons, 0, 12);
             root.SetColumnSpan(buttons, 2);
+
+            FlowLayoutPanel bottomButtons = new FlowLayoutPanel();
+            bottomButtons.Dock = DockStyle.Fill;
+            bottomButtons.FlowDirection = FlowDirection.RightToLeft;
+            bottomButtons.AutoSize = true;
+            Button save2 = new Button();
+            save2.Text = "保存";
+            save2.AutoSize = true;
+            save2.Click += SaveClicked;
+            bottomButtons.Controls.Add(save2);
+            root.Controls.Add(bottomButtons, 0, 14);
+            root.SetColumnSpan(bottomButtons, 2);
+
             AcceptButton = save;
             CancelButton = cancel;
+        }
+
+        private Control BuildSemanticPanel()
+        {
+            TableLayoutPanel panel = new TableLayoutPanel();
+            panel.ColumnCount = 1;
+            panel.AutoSize = true;
+            panel.Dock = DockStyle.Top;
+
+            _semanticStatus.AutoSize = true;
+            _semanticStatus.MaximumSize = new Size(520, 0);
+            _semanticStatus.Text = "语义索引状态：未检查";
+            panel.Controls.Add(_semanticStatus);
+
+            TableLayoutPanel range = new TableLayoutPanel();
+            range.ColumnCount = 4;
+            range.AutoSize = true;
+            range.Dock = DockStyle.Top;
+            Label monthsLabel = new Label();
+            monthsLabel.Text = "索引最近（月）";
+            monthsLabel.AutoSize = true;
+            monthsLabel.Anchor = AnchorStyles.Left;
+            _semanticMonths = new NumericUpDown();
+            _semanticMonths.Minimum = 1;
+            _semanticMonths.Maximum = 120;
+            _semanticMonths.Width = 70;
+            Label maxLabel = new Label();
+            maxLabel.Text = "最多邮件数";
+            maxLabel.AutoSize = true;
+            maxLabel.Anchor = AnchorStyles.Left;
+            _semanticMaxMails = new NumericUpDown();
+            _semanticMaxMails.Minimum = 100;
+            _semanticMaxMails.Maximum = 100000;
+            _semanticMaxMails.Increment = 500;
+            _semanticMaxMails.ThousandsSeparator = true;
+            _semanticMaxMails.Width = 90;
+            range.Controls.Add(monthsLabel, 0, 0);
+            range.Controls.Add(_semanticMonths, 1, 0);
+            range.Controls.Add(maxLabel, 2, 0);
+            range.Controls.Add(_semanticMaxMails, 3, 0);
+            panel.Controls.Add(range);
+
+            _semanticIncludeSent = new CheckBox();
+            _semanticIncludeSent.AutoSize = true;
+            _semanticIncludeSent.Text = "包含已发送邮件";
+            panel.Controls.Add(_semanticIncludeSent);
+
+            FlowLayoutPanel buttons = new FlowLayoutPanel();
+            buttons.AutoSize = true;
+            buttons.WrapContents = true;
+
+            _semanticSyncButton = new Button();
+            _semanticSyncButton.Text = "增量同步";
+            _semanticSyncButton.AutoSize = true;
+            _semanticSyncButton.Click += SemanticSyncClicked;
+            buttons.Controls.Add(_semanticSyncButton);
+
+            _semanticRebuildButton = new Button();
+            _semanticRebuildButton.Text = "重新构建索引";
+            _semanticRebuildButton.AutoSize = true;
+            _semanticRebuildButton.Click += SemanticRebuildClicked;
+            buttons.Controls.Add(_semanticRebuildButton);
+
+            _semanticDeleteButton = new Button();
+            _semanticDeleteButton.Text = "删除本地索引";
+            _semanticDeleteButton.AutoSize = true;
+            _semanticDeleteButton.Click += SemanticDeleteClicked;
+            buttons.Controls.Add(_semanticDeleteButton);
+
+            _semanticRefreshButton = new Button();
+            _semanticRefreshButton.Text = "刷新状态";
+            _semanticRefreshButton.AutoSize = true;
+            _semanticRefreshButton.Click += delegate { RefreshSemanticStatus(); };
+            buttons.Controls.Add(_semanticRefreshButton);
+            panel.Controls.Add(buttons);
+
+            Label note = CreateNoteLabel();
+            note.Text =
+                "语义索引读取邮件正文，并在本机生成向量，保存在 "
+                + "%LOCALAPPDATA%\\OutlookAiAssistant\\semantic-index。"
+                + "邮件正文和向量不会上传到任何云端服务。删除索引会同时删除"
+                + "本机保存的邮件正文副本和向量。仍然使用 Outlook 原生搜索与"
+                + "Executive Brief 不受影响。";
+            panel.Controls.Add(note);
+            return panel;
         }
 
         private void LoadSettings()
@@ -215,6 +333,226 @@ namespace OutlookAiAssistant.UI
                     _settings.MaxEmailCharacters));
             _identityEmails.Text = _settings.IdentityEmailAddresses;
             _identityAliases.Text = _settings.IdentityAliases;
+            _semanticMonths.Value = Math.Max(
+                _semanticMonths.Minimum,
+                Math.Min(_semanticMonths.Maximum, _settings.SemanticIndexMonths));
+            _semanticMaxMails.Value = Math.Max(
+                _semanticMaxMails.Minimum,
+                Math.Min(
+                    _semanticMaxMails.Maximum, _settings.SemanticIndexMaxMails));
+            _semanticIncludeSent.Checked = _settings.SemanticIndexIncludeSent;
+        }
+
+        private async void SemanticSyncClicked(object sender, EventArgs e)
+        {
+            await RunSemanticBuild(false);
+        }
+
+        private async void SemanticRebuildClicked(object sender, EventArgs e)
+        {
+            if (MessageBox.Show(
+                this,
+                "重新构建会为本范围内所有邮件重新计算向量，可能耗时较长。"
+                + "已保存的索引会在成功后才能被替换。是否继续？",
+                "重新构建语义索引",
+                MessageBoxButtons.OKCancel,
+                MessageBoxIcon.Warning) != DialogResult.OK)
+            {
+                return;
+            }
+
+            await RunSemanticBuild(true);
+        }
+
+        private async System.Threading.Tasks.Task RunSemanticBuild(
+            bool forceReembed)
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || _semanticBusy)
+            {
+                return;
+            }
+
+            AppSettings updated;
+            if (!TrySaveSettings(out updated))
+            {
+                return;
+            }
+
+            updated.SemanticIndexMonths = (int)_semanticMonths.Value;
+            updated.SemanticIndexMaxMails = (int)_semanticMaxMails.Value;
+            updated.SemanticIndexIncludeSent = _semanticIncludeSent.Checked;
+            updated = PersistWithoutClosing(updated);
+
+            SemanticServiceStatus status = addIn.SemanticClient.GetStatus();
+            if (!status.Reachable)
+            {
+                MessageBox.Show(
+                    this,
+                    "本地语义搜索服务未运行。请先运行 embedding_service "
+                    + "中的 setup-venv.cmd 和 start-service.cmd。",
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            SetSemanticBusy(true);
+            _semanticStatus.Text = "正在枚举 Outlook 邮件…";
+            try
+            {
+                SemanticIndexReport report =
+                    await addIn.SemanticIndexService.BuildIndexAsync(
+                        updated,
+                        CancellationToken.None,
+                        delegate(SemanticIndexProgress progress)
+                        {
+                            UpdateSemanticProgress(progress);
+                        },
+                        delegate(Func<object> action)
+                        {
+                            return Invoke(action);
+                        });
+                if (!string.IsNullOrWhiteSpace(report.Error))
+                {
+                    _semanticStatus.Text = "索引失败：" + report.Error;
+                }
+                else if (report.Cancelled)
+                {
+                    _semanticStatus.Text = "索引已取消。已完成的邮件已保存。";
+                }
+                else
+                {
+                    _semanticStatus.Text = "索引完成：新增/更新 "
+                        + report.Indexed + "，跳过 " + report.Skipped
+                        + "，失败 " + report.Failed + "。";
+                }
+            }
+            catch (Exception ex)
+            {
+                _semanticStatus.Text = "索引失败：" + ex.Message;
+            }
+            finally
+            {
+                SetSemanticBusy(false);
+                RefreshSemanticStatus();
+            }
+        }
+
+        private void UpdateSemanticProgress(SemanticIndexProgress progress)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action<SemanticIndexProgress>(
+                    UpdateSemanticProgress), progress);
+                return;
+            }
+
+            _semanticStatus.Text = "索引中：" + progress.Processed
+                + " / " + progress.Total
+                + "（新增 " + progress.Indexed + "，跳过 " + progress.Skipped
+                + "，失败 " + progress.Failed + "）";
+        }
+
+        private void SemanticDeleteClicked(object sender, EventArgs e)
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || _semanticBusy)
+            {
+                return;
+            }
+
+            if (MessageBox.Show(
+                this,
+                "将删除本机保存的全部邮件正文副本、片段和向量数据。"
+                + "Outlook 中的原始邮件不会被删除。是否继续？",
+                "删除本地语义索引",
+                MessageBoxButtons.OKCancel,
+                MessageBoxIcon.Warning) != DialogResult.OK)
+            {
+                return;
+            }
+
+            try
+            {
+                addIn.SemanticIndexService.ClearIndex();
+                _semanticStatus.Text = "本地语义索引已删除。";
+            }
+            catch (SemanticServiceException ex)
+            {
+                MessageBox.Show(
+                    this,
+                    ex.Message,
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            finally
+            {
+                RefreshSemanticStatus();
+            }
+        }
+
+        private void RefreshSemanticStatus()
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null)
+            {
+                _semanticStatus.Text = "语义索引状态：加载项正在初始化。";
+                return;
+            }
+
+            SemanticServiceStatus status = addIn.SemanticClient.GetStatus();
+            if (!status.Reachable)
+            {
+                _semanticStatus.Text =
+                    "语义索引状态：本地服务未运行。"
+                    + "请先启动 embedding_service 后再建立索引。";
+                return;
+            }
+
+            _semanticStatus.Text =
+                "语义索引状态：已索引 " + status.MailCount + " 封邮件，"
+                + status.ChunkCount + " 个片段（"
+                + status.EmbeddedChunkCount + " 个已向量化），"
+                + "占用 " + FormatSize(status.SizeBytes) + "。\r\n"
+                + "模型：" + status.ModelId
+                + (status.ModelAvailable ? "（可用）" : "（不可用）")
+                + "，设备：" + status.Device
+                + (string.IsNullOrWhiteSpace(status.LastSyncAt)
+                    ? string.Empty
+                    : "\r\n上次同步：" + status.LastSyncAt);
+        }
+
+        private void SetSemanticBusy(bool busy)
+        {
+            _semanticBusy = busy;
+            _semanticSyncButton.Enabled = !busy;
+            _semanticRebuildButton.Enabled = !busy;
+            _semanticDeleteButton.Enabled = !busy;
+            _semanticRefreshButton.Enabled = !busy;
+        }
+
+        private AppSettings PersistWithoutClosing(AppSettings updated)
+        {
+            _settingsStore.Save(updated);
+            _settings = updated.Copy();
+            return updated;
+        }
+
+        private static string FormatSize(long bytes)
+        {
+            if (bytes < 1024)
+            {
+                return bytes + " B";
+            }
+
+            if (bytes < 1024 * 1024)
+            {
+                return (bytes / 1024.0).ToString("0.0") + " KB";
+            }
+
+            return (bytes / (1024.0 * 1024.0)).ToString("0.0") + " MB";
         }
 
         private void SaveClicked(object sender, EventArgs e)
@@ -305,6 +643,9 @@ namespace OutlookAiAssistant.UI
                     Decimal.ToInt32(_maximumCharacters.Value);
                 updated.IdentityEmailAddresses = _identityEmails.Text.Trim();
                 updated.IdentityAliases = _identityAliases.Text.Trim();
+                updated.SemanticIndexMonths = (int)_semanticMonths.Value;
+                updated.SemanticIndexMaxMails = (int)_semanticMaxMails.Value;
+                updated.SemanticIndexIncludeSent = _semanticIncludeSent.Checked;
 
                 if (_clearApiKey.Checked)
                 {

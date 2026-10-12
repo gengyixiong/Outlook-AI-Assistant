@@ -91,6 +91,48 @@ AI 只生成受限 JSON。Contact ID 必须在本地索引中精确验证后才�
 加载项在本机从同一计划编译宽松、推荐和精确三档 AQS；切换档位不会再次
 请求 AI。搜索由本机 Outlook Instant Search 执行。
 
+## 本地语义搜索（新增）
+
+触发条件：用户点击语义搜索页的“建立 / 更新语义索引”，或点击“语义搜索”。
+
+本功能**完全在本地运行**，不会把任何邮件内容发送到云端：
+
+- 邮件正文、标题、发件人和附件名只用于在**本机**生成向量并写入本地
+  SQLite 数据库。
+- 向量化模型 `google/embeddinggemma-2` 在本机 Python 进程中运行。
+- 语义搜索只把用户输入的自然语言描述在本机编码为向量，并与本地
+  索引向量比较。
+- 不使用任何云端 Embedding API，不把候选邮件或结果发送给任何 LLM。
+- 语义搜索默认不依赖外部 LLM。
+
+本地存储位置：
+
+```text
+%LOCALAPPDATA%\OutlookAiAssistant\semantic-index\mail.db   # 元数据、正文、向量
+%LOCALAPPDATA%\OutlookAiAssistant\models\                  # 模型缓存
+%LOCALAPPDATA%\OutlookAiAssistant\semantic-service-token   # 本地访问令牌
+%LOCALAPPDATA%\OutlookAiAssistant\logs\semantic-service.log # 服务日志
+```
+
+本地服务：
+
+- 只监听 `127.0.0.1`，不对局域网开放。
+- 除健康检查外都需要本地随机 Bearer Token，避免其他本地进程随意读取
+  数据库中的邮件内容。
+- 服务不可用或模型不可用时给出明确提示，不会让 Outlook 崩溃。
+
+数据清理：
+
+- 设置页“删除本地索引”会删除本机保存的邮件正文副本、片段和向量数据。
+- Outlook 中的原始邮件不受影响。
+- 卸载时默认保留上述数据；使用 `Uninstall.cmd -RemoveSettings` 会一并删除。
+
+正文清洗：
+
+- 去除 Outlook 回复引用、签名和重复引用片段。
+- 形似提示词注入的行会被标记为不可信内容，防止邮件正文影响系统行为。
+- 邮件正文被视为不可信数据，不能改变系统任务。
+
 ## API Key
 
 API Key 使用 Windows DPAPI 的 `CurrentUser` 范围加密，存放于：
@@ -128,4 +170,6 @@ API Key 使用 Windows DPAPI 的 `CurrentUser` 范围加密，存放于：
 ## 网络
 
 - Base URL 支持 HTTP 和 HTTPS；请求发送到配置的 OpenAI-compatible Chat Completions API。
+- 本地语义搜索服务只监听 loopback（`127.0.0.1`），不产生任何外部网络请求。
 - 加载项没有遥测、自动更新或其他后台网络请求。
+- 模型首次下载需要访问 Hugging Face；下载完成后语义搜索可完全离线运行。
