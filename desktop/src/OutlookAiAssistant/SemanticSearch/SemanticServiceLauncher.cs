@@ -169,6 +169,34 @@ namespace OutlookAiAssistant.SemanticSearch
         }
 
         /// <summary>
+        /// Builds the cmd.exe arguments that run the start script hidden and
+        /// capture its output.
+        ///
+        /// Exposed for tests because cmd quoting is treacherous: a form that
+        /// looks right makes cmd treat the quoted script path as a window
+        /// title, run nothing, and exit immediately, so the service never
+        /// starts. The working form is `call "script" > "log" 2>&1`, which
+        /// also survives spaces in either path.
+        /// </summary>
+        public static string BuildHiddenStartArguments(
+            string scriptPath, string logPath)
+        {
+            if (string.IsNullOrWhiteSpace(scriptPath))
+            {
+                throw new ArgumentException("scriptPath is required",
+                    "scriptPath");
+            }
+
+            if (string.IsNullOrWhiteSpace(logPath))
+            {
+                throw new ArgumentException("logPath is required", "logPath");
+            }
+
+            return "/c call \"" + scriptPath + "\" > \""
+                + logPath + "\" 2>&1";
+        }
+
+        /// <summary>
         /// Starts the service in the background. Returns null on success,
         /// otherwise a message explaining why it could not be started.
         ///
@@ -218,9 +246,14 @@ namespace OutlookAiAssistant.SemanticSearch
                         ProductDirectory, "logs", "service-start.log");
                     Directory.CreateDirectory(Path.GetDirectoryName(logPath));
 
+                    // Use 'call' with the script path quoted, and the log
+                    // path quoted too. This form works even when the install
+                    // path contains spaces. The earlier forms failed because
+                    // cmd treats a quoted first token as a window title and
+                    // runs nothing, or rejects the nested quoting.
                     info.FileName = "cmd.exe";
-                    info.Arguments = "/c \"" + script + "\" > \""
-                        + logPath + "\" 2>&1";
+                    info.Arguments = BuildHiddenStartArguments(
+                        script, logPath);
                     info.UseShellExecute = false;
                     info.CreateNoWindow = true;
                     info.WorkingDirectory = InstalledServiceDirectory;

@@ -29,6 +29,7 @@ namespace OutlookAiAssistant.UnitTests
             Run("Builds compatible endpoint URLs", BuildsCompatibleEndpointUrls);
             Run("Builds settings dialog before first display", BuildsSettingsDialog);
             Run("Builds a visible semantic result card", BuildsVisibleResultCard);
+            Run("Builds safe hidden-start arguments", BuildsHiddenStartArguments);
             Run("Trims quoted history from stored messages", TrimsQuotedHistory);
             Run("Keeps ordinary From lines", KeepsOrdinaryFromLines);
             Run("Builds separate history and current prompt", BuildsConversationPrompt);
@@ -191,6 +192,36 @@ namespace OutlookAiAssistant.UnitTests
             card.PerformLayout();
             host.PerformLayout();
             Application.DoEvents();
+        }
+
+        // cmd quoting is treacherous. A wrong form makes cmd treat the quoted
+        // script path as a window title, run nothing, and exit at once, so the
+        // service never starts and the UI flips back to "not running".
+        private static void BuildsHiddenStartArguments()
+        {
+            string args = SemanticServiceLauncher.BuildHiddenStartArguments(
+                @"C:\a b\start-service.cmd",
+                @"C:\a b\logs\service-start.log");
+
+            True(args.StartsWith("/c call \""),
+                "must use 'call' with a quoted script path, got: " + args);
+            True(args.Contains("\"C:\\a b\\start-service.cmd\""),
+                "script path must be quoted for spaces");
+            True(args.Contains("\"C:\\a b\\logs\\service-start.log\""),
+                "log path must be quoted for spaces");
+            True(args.Contains(">"), "must redirect stdout");
+            True(args.Contains("2>&1"), "must redirect stderr");
+            True(!args.StartsWith("/c \"C:"),
+                "must not pass a bare quoted path as the command");
+
+            Throws<ArgumentException>(delegate
+            {
+                SemanticServiceLauncher.BuildHiddenStartArguments("", "x");
+            });
+            Throws<ArgumentException>(delegate
+            {
+                SemanticServiceLauncher.BuildHiddenStartArguments("x", "");
+            });
         }
 
         private static Button FindButton(Control root, string text)
