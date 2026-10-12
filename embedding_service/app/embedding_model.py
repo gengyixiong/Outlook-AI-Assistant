@@ -260,6 +260,9 @@ class EmbeddingModel:
         # Filled in by load(): the device actually used and why.
         self.resolved_device: Optional[str] = None
         self.device_reason: str = ""
+        # True while a load is in progress, so callers can show "loading"
+        # instead of the misleading "not ready".
+        self.loading = False
 
     # ------------------------------------------------------------------
     @property
@@ -293,70 +296,82 @@ class EmbeddingModel:
             if self._model is not None:
                 return True
 
-            # Decide offline-vs-online BEFORE importing the libraries.
-            # huggingface_hub and transformers read these environment values
-            # when they are first imported, so setting them afterwards has no
-            # effect and the library still probes the Hub - which on a slow or
-            # blocked network caused minutes of retries on every start.
-            cached = bool(offline_if_cached and self.is_cached())
-            if cached:
-                set_offline_mode(True)
-
+            self.loading = True
             try:
-                import torch
-                from sentence_transformers import SentenceTransformer
-            except Exception as ex:  # pragma: no cover - environment dependent
-                self._load_error = (
-                    "Python embedding runtime is not installed: %s" % ex
-                )
-                logger.error(self._load_error)
-                return False
+                return self._load_locked(offline_if_cached)
+            finally:
+                self.loading = False
 
-            try:
-                resolved_device, reason = detect_device(self.device)
-                self.resolved_device = resolved_device
-                self.device_reason = reason
-                resolved_dtype = self._resolve_dtype(torch, resolved_device)
-                local_only = cached
-                model_kwargs = {"dtype": resolved_dtype}
-                if local_only:
-                    model_kwargs["local_files_only"] = True
+    def _load_locked(self, offline_if_cached: bool) -> bool:
+        """Actual load work. Caller holds the lock and set loading."""
 
-                # Load by local path when we have one. Passing the repo id
-                # would still let the library resolve the revision against the
-                # Hub, which is exactly the network call we are avoiding.
-                source = self.model_id
-                if local_only:
-                    snapshot = find_cached_snapshot(
-                        self.model_dir, self.model_id)
-                    if snapshot is not None:
-                        source = str(snapshot)
+        if self._model is not None:
+            return True
 
-                # Disable the vision and audio encoders: this service only
-                # embeds text. config_kwargs is the officially documented way
-                # to skip those modules (270M vs 740M parameters).
-                self._model = SentenceTransformer(
-                    source,
-                    device=resolved_device,
-                    config_kwargs={
-                        "vision_config": None,
-                        "audio_config": None,
-                    },
-                    model_kwargs=model_kwargs,
-                )
-                self._load_error = None
-                logger.info(
-                    "Loaded embedding model %s on %s (%s)%s - %s",
-                    self.model_id, resolved_device, resolved_dtype,
-                    " [offline, from cache]" if local_only else "",
-                    reason,
-                )
-                return True
-            except Exception as ex:  # pragma: no cover - environment dependent
-                self._model = None
-                self._load_error = self._humanize_load_error(ex)
-                logger.error(self._load_error)
-                return False
+        # Decide offline-vs-online BEFORE importing the libraries.
+        # huggingface_hub and transformers read these environment values
+        # when they are first imported, so setting them afterwards has no
+        # effect and the library still probes the Hub - which on a slow or
+        # blocked network caused minutes of retries on every start.
+        cached = bool(offline_if_cached and self.is_cached())
+        if cached:
+            set_offline_mode(True)
+
+        try:
+            import torch
+            from sentence_transformers import SentenceTransformer
+        except Exception as ex:  # pragma: no cover - environment dependent
+            self._load_error = (
+                "Python embedding runtime is not installed: %s" % ex
+            )
+            logger.error(self._load_error)
+            return False
+
+        try:
+            resolved_device, reason = detect_device(self.device)
+            self.resolved_device = resolved_device
+            self.device_reason = reason
+            resolved_dtype = self._resolve_dtype(torch, resolved_device)
+            local_only = cached
+            model_kwargs = {"dtype": resolved_dtype}
+            if local_only:
+                model_kwargs["local_files_only"] = True
+
+            # Load by local path when we have one. Passing the repo id
+            # would still let the library resolve the revision against the
+            # Hub, which is exactly the network call we are avoiding.
+            source = self.model_id
+            if local_only:
+                snapshot = find_cached_snapshot(
+                    self.model_dir, self.model_id)
+                if snapshot is not None:
+                    source = str(snapshot)
+
+            # Disable the vision and audio encoders: this service only
+            # embeds text. config_kwargs is the officially documented way
+            # to skip those modules (270M vs 740M parameters).
+            self._model = SentenceTransformer(
+                source,
+                device=resolved_device,
+                config_kwargs={
+                    "vision_config": None,
+                    "audio_config": None,
+                },
+                model_kwargs=model_kwargs,
+            )
+            self._load_error = None
+            logger.info(
+                "Loaded embedding model %s on %s (%s)%s - %s",
+                self.model_id, resolved_device, resolved_dtype,
+                " [offline, from cache]" if local_only else "",
+                reason,
+            )
+            return True
+        except Exception as ex:  # pragma: no cover - environment dependent
+            self._model = None
+            self._load_error = self._humanize_load_error(ex)
+            logger.error(self._load_error)
+            return False
 
     def download(self, progress: Optional[Callable[[str], None]] = None) -> bool:
         """Download and cache the model without keeping it loaded.

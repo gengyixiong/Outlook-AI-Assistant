@@ -168,16 +168,15 @@ namespace OutlookAiAssistant.SemanticSearch
                 InstalledServiceDirectory, ".venv", "Scripts", "python.exe");
         }
 
-        private static string PythonWindowlessPath()
-        {
-            string path = Path.Combine(
-                InstalledServiceDirectory, ".venv", "Scripts", "pythonw.exe");
-            return File.Exists(path) ? path : null;
-        }
-
         /// <summary>
         /// Starts the service in the background. Returns null on success,
         /// otherwise a message explaining why it could not be started.
+        ///
+        /// This launches the same start-service.cmd the user runs by hand,
+        /// but hidden and with stdout/stderr redirected to a log. Running the
+        /// script (instead of pythonw -m app.main directly) means the working
+        /// directory and venv activation match the manual path exactly, and
+        /// redirecting the streams means an early failure is never silent.
         /// </summary>
         public string Start()
         {
@@ -199,39 +198,32 @@ namespace OutlookAiAssistant.SemanticSearch
                     "1",
                     StringComparison.Ordinal);
 
+                string script = Path.Combine(
+                    InstalledServiceDirectory, "start-service.cmd");
+
                 ProcessStartInfo info = new ProcessStartInfo();
                 if (wantConsole)
                 {
                     // Troubleshooting path: visible console running the script.
                     info.FileName = "cmd.exe";
-                    info.Arguments = "/c \""
-                        + Path.Combine(InstalledServiceDirectory,
-                            "start-service.cmd") + "\"";
+                    info.Arguments = "/c \"" + script + "\"";
                     info.UseShellExecute = true;
                     info.WindowStyle = ProcessWindowStyle.Normal;
                 }
                 else
                 {
-                    // Resident path: no window at all.
-                    string windowless = PythonWindowlessPath();
-                    if (windowless != null)
-                    {
-                        info.FileName = windowless;
-                    }
-                    else
-                    {
-                        // Fall back to python.exe but keep the window hidden.
-                        info.FileName = PythonPath();
-                        info.CreateNoWindow = true;
-                    }
+                    // Hidden path: same script, no window, output captured to
+                    // a launcher log so a startup error can be diagnosed.
+                    string logPath = Path.Combine(
+                        ProductDirectory, "logs", "service-start.log");
+                    Directory.CreateDirectory(Path.GetDirectoryName(logPath));
 
-                    info.Arguments = "-m app.main";
+                    info.FileName = "cmd.exe";
+                    info.Arguments = "/c \"" + script + "\" > \""
+                        + logPath + "\" 2>&1";
                     info.UseShellExecute = false;
                     info.CreateNoWindow = true;
                     info.WorkingDirectory = InstalledServiceDirectory;
-                    // Make sure the child gets its own environment so it can
-                    // set HF_HOME etc. without inheriting stale values.
-                    info.EnvironmentVariables["PYTHONUNBUFFERED"] = "1";
                 }
 
                 Process.Start(info);

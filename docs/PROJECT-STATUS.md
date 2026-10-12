@@ -7,6 +7,20 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.6.7 修复：启动按钮失效、模型误报未就绪
+
+- 修复“启动服务”按钮无效：之前直接用 `pythonw -m app.main` 启动，
+  工作目录 / venv 环境和手动运行 `start-service.cmd` 不一致，而且没有
+  stdout/stderr，一旦早期失败就**完全静默**。现在按钮改为以隐藏窗口运行
+  同一个 `start-service.cmd`，并把输出重定向到
+  `logs\service-start.log`，失败可查。
+- 修复“模型未就绪”误报：模型是懒加载的，而 `/health` 只读取当前状态，
+  所以服务刚启动时（尚未触发任何搜索）会错误地返回 `model_available=false`。
+  现在 `/health` 在模型已缓存时会触发一次加载；新增 `model_loading` 字段。
+- 实测：服务启动后 **6 秒**内 `/health` 返回
+  `model_available=true / model_cached=true`。
+- 新增 2 个回归测试（缓存时触发加载、未缓存时不加载）。
+
 ## 0.6.6 修复：启动慢/卡住——彻底离线加载
 
 - 定位根因：即使模型已缓存，启动仍会联网并重试，导致界面“正在启动”卡住
@@ -218,11 +232,11 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - C# 单元测试：24/24 通过。
-- Python 单元测试：113/113 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
+- Python 单元测试：115/115 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.6.6.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.6.7.zip` 已生成。
 
 ## 尚需用户手动验收
 

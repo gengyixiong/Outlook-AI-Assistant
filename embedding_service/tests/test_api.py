@@ -270,3 +270,69 @@ def test_shutdown_endpoint_requests_stop(client):
     assert response.status_code == 200
     assert response.json()["stopping"] is True
     assert calls == [True]
+
+
+def test_health_triggers_model_load_when_cached(client):
+    """A running service must report 'model ready', not 'not ready'.
+
+    The model loads lazily. Without a load on the health check, a freshly
+    started service reported model_available=false and the add-in showed
+    'model not ready' even though everything was fine.
+    """
+
+    calls = {"load": 0}
+
+    class CachedModel:
+        def __init__(self):
+            self.available = False
+            self.load_error = None
+            self.resolved_device = "cpu"
+            self.device_reason = "test"
+            self.loading = False
+            self.models_dir = None
+
+        def is_cached(self):
+            return True
+
+        def load(self, offline_if_cached=True):
+            calls["load"] += 1
+            self.available = True
+            return True
+
+        def encode_queries(self, *a, **k):  # pragma: no cover
+            raise AssertionError("not used")
+
+    client.app.state.service.model = CachedModel()
+    body = client.get("/health").json()
+    assert calls["load"] == 1, "health must trigger a load when cached"
+    assert body["model_available"] is True
+    assert body["model_cached"] is True
+
+
+def test_health_does_not_load_when_not_cached(client):
+    """Do not attempt a load (and a download) when there is no cache."""
+
+    calls = {"load": 0}
+
+    class UncachedModel:
+        available = False
+        load_error = None
+        resolved_device = "cpu"
+        device_reason = "test"
+        loading = False
+
+        def is_cached(self):
+            return False
+
+        def load(self, offline_if_cached=True):  # pragma: no cover
+            calls["load"] += 1
+            return False
+
+        def encode_queries(self, *a, **k):  # pragma: no cover
+            raise AssertionError("not used")
+
+    client.app.state.service.model = UncachedModel()
+    body = client.get("/health").json()
+    assert calls["load"] == 0
+    assert body["model_available"] is False
+    assert body["model_cached"] is False

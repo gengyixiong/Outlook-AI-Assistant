@@ -232,22 +232,33 @@ def create_app(
 
     @app.get("/health")
     def health() -> dict:
+        # Trigger a load on the first check. The model loads lazily, so without
+        # this a freshly started service would report model_available=false and
+        # the add-in would wrongly show "model not ready" until the first
+        # search. Loading here is cheap after the first time and keeps the
+        # reported state truthful.
+        if not state.model.available and _model_is_cached(state.model):
+            state.model.load()
+
         stats = state.database.stats()
         return {
             "status": "ok",
             "model_id": settings.model_id,
             "model_available": state.model.available,
+            "model_loading": bool(getattr(state.model, "loading", False)),
             "model_error": state.model.load_error,
             # The device actually in use after auto-detection, plus why.
-            "device": state.resolved_device or settings.device,
-            "device_reason": state.device_reason,
+            "device": (getattr(state.model, "resolved_device", None)
+                       or state.resolved_device or settings.device),
+            "device_reason": (getattr(state.model, "device_reason", "")
+                              or state.device_reason),
             "device_preference": settings.device,
             "model_cached": _model_is_cached(state.model),
             "dtype": settings.dtype,
             "embedding_dim": settings.embedding_dim,
             "index_busy": state.index_busy,
             "index": stats,
-            "version": "0.6.5",
+            "version": "0.6.7",
             "pid": os.getpid(),
             # Local path hints so the add-in can show and open them. These are
             # filesystem paths only; they contain no mail content.
