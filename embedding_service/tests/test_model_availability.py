@@ -143,3 +143,49 @@ def test_load_prefers_offline_when_cached(monkeypatch):
 
     assert model.load() is True
     assert captured["model_kwargs"].get("local_files_only") is True
+
+
+def test_filesystem_cache_check_finds_hub_layout(tmp_path):
+    """The offline decision must not need any import or network."""
+
+    from app.embedding_model import filesystem_model_is_cached, find_cached_snapshot
+
+    model_id = "google/embeddinggemma-2"
+    snapshot = (tmp_path / "huggingface" / "hub"
+                / "models--google--embeddinggemma-2" / "snapshots" / "abc123")
+    snapshot.mkdir(parents=True)
+    (snapshot / "model.safetensors").write_bytes(b"x")
+
+    assert filesystem_model_is_cached(tmp_path, model_id) is True
+    assert find_cached_snapshot(tmp_path, model_id) == snapshot
+
+
+def test_filesystem_cache_ignores_folder_without_weights(tmp_path, monkeypatch):
+    """A config-only folder must not be treated as a usable model.
+
+    The legacy cache is neutralised so the check depends only on tmp_path.
+    """
+
+    from app.embedding_model import filesystem_model_is_cached
+
+    monkeypatch.setenv("USERPROFILE", str(tmp_path / "nohome"))
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    snapshot = (tmp_path / "huggingface" / "hub"
+                / "models--google--embeddinggemma-2" / "snapshots" / "abc")
+    snapshot.mkdir(parents=True)
+    (snapshot / "config.json").write_text("{}")
+
+    assert filesystem_model_is_cached(tmp_path, "google/embeddinggemma-2") is False
+
+
+def test_offline_mode_sets_and_clears_env(monkeypatch):
+    from app.embedding_model import set_offline_mode
+
+    monkeypatch.delenv("HF_HUB_OFFLINE", raising=False)
+    monkeypatch.delenv("TRANSFORMERS_OFFLINE", raising=False)
+    set_offline_mode(True)
+    import os
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    assert os.environ["TRANSFORMERS_OFFLINE"] == "1"
+    set_offline_mode(False)
+    assert "HF_HUB_OFFLINE" not in os.environ

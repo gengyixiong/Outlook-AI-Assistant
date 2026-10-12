@@ -81,6 +81,64 @@ namespace OutlookAiAssistant.SemanticSearch
         }
 
         /// <summary>
+        /// True when a service process (python/pythonw running app.main from
+        /// our install dir) currently exists. Used to detect a crash quickly
+        /// instead of waiting for the full startup timeout.
+        /// </summary>
+        public static bool IsProcessAlive()
+        {
+            try
+            {
+                foreach (Process process in Process.GetProcesses())
+                {
+                    try
+                    {
+                        string name = process.ProcessName;
+                        if (!string.Equals(name, "python",
+                                StringComparison.OrdinalIgnoreCase)
+                            && !string.Equals(name, "pythonw",
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
+
+                        string path = null;
+                        try
+                        {
+                            path = process.MainModule == null
+                                ? null
+                                : process.MainModule.FileName;
+                        }
+                        catch
+                        {
+                            // Access to another user's process is denied; skip.
+                        }
+
+                        if (!string.IsNullOrEmpty(path)
+                            && path.IndexOf(
+                                InstalledServiceDirectory,
+                                StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            return true;
+                        }
+                    }
+                    finally
+                    {
+                        process.Dispose();
+                    }
+                }
+            }
+            catch
+            {
+                // If we cannot enumerate, assume it is alive rather than
+                // reporting a false crash.
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// True when the service answers on the loopback endpoint.
         /// </summary>
         public bool IsRunning()

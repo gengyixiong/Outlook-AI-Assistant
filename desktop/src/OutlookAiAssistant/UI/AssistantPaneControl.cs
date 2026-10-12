@@ -1024,22 +1024,42 @@ namespace OutlookAiAssistant.UI
         /// </summary>
         private async Task WaitForServiceAsync(Connect addIn, string successMessage)
         {
-            _semanticServiceStatus.Text = "服务状态：正在启动…";
-            SetSemanticBusy(true, "正在启动本地语义搜索服务…首次加载模型可能需要一分钟。");
+            // Loading a 1.4 GB model on CPU can take a couple of minutes, so
+            // allow up to three minutes before giving up. Elapsed time is
+            // shown so the wait does not look like a hang.
+            const int maximumSeconds = 180;
+            SetSemanticBusy(true, null);
             try
             {
-                for (int attempt = 0; attempt < 90; attempt++)
+                for (int elapsed = 1; elapsed <= maximumSeconds; elapsed++)
                 {
+                    _semanticServiceStatus.Text = string.Format(
+                        "服务状态：正在启动…（已等待 {0} 秒）", elapsed);
+                    if (elapsed == 1)
+                    {
+                        SetStatus("正在启动本地语义搜索服务…首次加载模型可能需要 1-2 分钟。");
+                    }
+
                     await Task.Delay(1000);
                     if (addIn.SemanticClient.GetStatus().Reachable)
                     {
                         SetStatus(successMessage);
                         return;
                     }
+
+                    // If the background process has died, stop waiting and
+                    // point at the log instead of burning another two minutes.
+                    if (elapsed >= 5
+                        && !SemanticServiceLauncher.IsProcessAlive())
+                    {
+                        SetStatus("服务进程已退出，启动失败。请打开日志目录查看 "
+                            + "semantic-service.log。设置页可一键打开日志目录。");
+                        return;
+                    }
                 }
 
-                SetStatus("服务启动较慢或失败。可点击“刷新状态”，"
-                    + "或在设置页打开日志目录查看原因。");
+                SetStatus("服务在 3 分钟内未能响应。请打开日志目录查看 "
+                    + "semantic-service.log 的最后几行。");
             }
             finally
             {

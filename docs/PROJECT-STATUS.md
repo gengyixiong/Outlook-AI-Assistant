@@ -7,6 +7,24 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.6.6 修复：启动慢/卡住——彻底离线加载
+
+- 定位根因：即使模型已缓存，启动仍会联网并重试，导致界面“正在启动”卡住
+  数分钟（日志可见 `WinError 10060` 重试 1/5–5/5）。
+- 真正的原因有两层：
+  1. `HF_HUB_OFFLINE` 在 `huggingface_hub` **导入时**就被读取并缓存，
+     之后再设环境变量无效；我们之前设得太晚。
+  2. 即使传了 `local_files_only=True`，`SentenceTransformer` 仍会向 Hub
+     查询 prompt/adapter 元数据。
+- 修复：在导入任何 Hugging Face 库**之前**，用纯文件系统检查判断模型是否
+  已缓存，若已缓存则设置 `HF_HUB_OFFLINE=1` / `TRANSFORMERS_OFFLINE=1`，
+  并**直接按本地快照路径加载**，完全不访问网络。
+- 兼容旧缓存：同时检查新模型目录与旧的
+  `%USERPROFILE%\.cache\huggingface`，因此之前下载的模型无需重新下载。
+- 实测：加载从 3–6 分钟降到 **7.5 秒**，网络请求数为 **0**。
+- 界面“正在启动”现在显示已等待秒数，超时延长到 180 秒，并在进程退出时
+  立即报错。
+
 ## 0.6.5 改进：常驻服务、GPU 自动检测、模型目录修复
 
 - 修复模型目录为空：之前虽然配置了 `%LOCALAPPDATA%\OutlookAiAssistant\models`，
@@ -200,11 +218,11 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - C# 单元测试：24/24 通过。
-- Python 单元测试：110/110 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
+- Python 单元测试：113/113 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.6.5.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.6.6.zip` 已生成。
 
 ## 尚需用户手动验收
 

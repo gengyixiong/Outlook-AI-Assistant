@@ -30,7 +30,12 @@ from pydantic import BaseModel, Field
 
 from .config import ServiceSettings
 from .database import Database
-from .embedding_model import EmbeddingModel, EmbeddingModelUnavailable
+from .embedding_model import (
+    EmbeddingModel,
+    EmbeddingModelUnavailable,
+    filesystem_model_is_cached,
+    set_offline_mode,
+)
 from .indexing import Indexer, IndexMailRequest
 from .search import HybridSearch
 
@@ -121,6 +126,7 @@ class ServiceState:
             device=settings.device,
             dtype=settings.dtype,
             embedding_dim=settings.embedding_dim,
+            model_dir=settings.model_cache_dir,
         )
         self.indexer = Indexer(self.database, self.model, settings)
         self.search = HybridSearch(self.database, self.model, settings)
@@ -146,6 +152,20 @@ class ServiceState:
             callback()
 
 
+def _prefer_offline(settings) -> bool:
+    """True when the model is on disk and offline mode should be forced.
+
+    Uses a filesystem-only check so it never imports huggingface_hub (which
+    would freeze the offline flag too late). OAA_ALLOW_ONLINE=1 overrides this
+    for people who explicitly want to re-check the Hub.
+    """
+
+    if os.environ.get("OAA_ALLOW_ONLINE") == "1":
+        return False
+    return filesystem_model_is_cached(
+        settings.model_cache_dir, settings.model_id)
+
+
 def _model_is_cached(model) -> bool:
     """Best-effort cache check that tolerates test doubles."""
 
@@ -164,6 +184,13 @@ def create_app(
 ) -> FastAPI:
     settings = settings or ServiceSettings.from_env()
     settings.ensure_directories()
+
+    # Decide the offline mode BEFORE anything imports huggingface_hub, whose
+    # HF_HUB_OFFLINE constant is fixed at import time. If the model is already
+    # on disk we go offline immediately, which is what makes startup fast and
+    # reliable when the network is slow, filtered, or absent.
+    if _prefer_offline(settings):
+        set_offline_mode(True)
 
     state = ServiceState(settings)
     state.database.set_meta("model_id", settings.model_id)

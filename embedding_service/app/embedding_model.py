@@ -12,7 +12,9 @@ says significantly improves retrieval accuracy.
 from __future__ import annotations
 
 import logging
+import os
 import threading
+from pathlib import Path
 from typing import Callable, List, Optional, Sequence
 
 import numpy as np
@@ -24,6 +26,79 @@ logger = logging.getLogger("oaa.embedding")
 
 class EmbeddingModelUnavailable(RuntimeError):
     """Raised when the model cannot be loaded or used."""
+
+
+def _hub_model_folders(model_dir, model_id: str) -> list:
+    """Candidate hub cache folders for a model, newest layout first."""
+
+    safe = model_id.replace("/", "--")
+    folder = "models--" + safe
+    roots = []
+    if model_dir:
+        roots.append(Path(model_dir) / "huggingface" / "hub")
+        roots.append(Path(model_dir) / "hub")
+    # Legacy default location, used before the model dir was honoured.
+    legacy = os.environ.get("USERPROFILE") or os.path.expanduser("~")
+    roots.append(Path(legacy) / ".cache" / "huggingface" / "hub")
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        roots.append(Path(xdg) / "huggingface" / "hub")
+    return [root / folder for root in roots]
+
+
+def find_cached_snapshot(model_dir, model_id: str):
+    """Return the local snapshot path for a cached model, or None.
+
+    Loading by path avoids any Hub lookup, which is what keeps startup
+    offline and fast even when the cache lives in the legacy location.
+    """
+
+    newest = None
+    for folder in _hub_model_folders(model_dir, model_id):
+        try:
+            if not folder.is_dir():
+                continue
+            for snapshot in folder.glob("snapshots/*"):
+                if not (snapshot / "model.safetensors").exists():
+                    continue
+                if newest is None or snapshot.stat().st_mtime > newest.stat().st_mtime:
+                    newest = snapshot
+        except Exception:
+            continue
+    return newest
+
+
+def filesystem_model_is_cached(model_dir, model_id: str) -> bool:
+    """Check for a cached snapshot using only the filesystem.
+
+    This must be used before importing huggingface_hub, because that import
+    caches the offline flags. Looking for the hub cache folder directly lets
+    the service decide to go offline first.
+
+    Both our own model directory and the legacy default Hugging Face cache
+    are checked, so a model downloaded by an older build is still found and
+    the service stays offline instead of trying to re-download.
+    """
+
+    return find_cached_snapshot(model_dir, model_id) is not None
+
+
+def set_offline_mode(enabled: bool) -> None:
+    """Toggle the process-wide Hugging Face offline flags.
+
+    These must be environment variables: huggingface_hub and transformers
+    read them at call time, and they are the only way to stop the library
+    from probing the Hub for optional files. ``model_kwargs={
+    "local_files_only": True}`` alone is not sufficient because
+    SentenceTransformer still requests prompt/adapter metadata.
+    """
+
+    if enabled:
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    else:
+        os.environ.pop("HF_HUB_OFFLINE", None)
+        os.environ.pop("TRANSFORMERS_OFFLINE", None)
 
 
 def detect_device(preferred: str = "auto") -> tuple:
@@ -170,11 +245,15 @@ class EmbeddingModel:
         device: str = "auto",
         dtype: str = "auto",
         embedding_dim: int = 768,
+        model_dir=None,
     ) -> None:
         self.model_id = model_id
         self.device = device
         self.dtype = dtype
         self.embedding_dim = embedding_dim
+        # Where the hub cache lives. Used to locate an existing snapshot so we
+        # can load it by path and never consult the Hub.
+        self.model_dir = model_dir
         self._model = None
         self._load_error: Optional[str] = None
         self._lock = threading.RLock()
@@ -194,19 +273,11 @@ class EmbeddingModel:
     def is_cached(self) -> bool:
         """True when the model snapshot is already present on this machine.
 
-        This performs no network access, so the service can decide to load
-        fully offline without waiting on Hugging Face.
+        Filesystem only: no network, and no dependency on import order, so it
+        is safe to call before huggingface_hub is imported.
         """
 
-        try:
-            from huggingface_hub import snapshot_download
-        except Exception:  # pragma: no cover
-            return False
-        try:
-            snapshot_download(repo_id=self.model_id, local_files_only=True)
-            return True
-        except Exception:
-            return False
+        return filesystem_model_is_cached(self.model_dir, self.model_id)
 
     def load(self, offline_if_cached: bool = True) -> bool:
         """Load the model. Returns False when the runtime is missing.
@@ -221,6 +292,16 @@ class EmbeddingModel:
         with self._lock:
             if self._model is not None:
                 return True
+
+            # Decide offline-vs-online BEFORE importing the libraries.
+            # huggingface_hub and transformers read these environment values
+            # when they are first imported, so setting them afterwards has no
+            # effect and the library still probes the Hub - which on a slow or
+            # blocked network caused minutes of retries on every start.
+            cached = bool(offline_if_cached and self.is_cached())
+            if cached:
+                set_offline_mode(True)
+
             try:
                 import torch
                 from sentence_transformers import SentenceTransformer
@@ -236,17 +317,26 @@ class EmbeddingModel:
                 self.resolved_device = resolved_device
                 self.device_reason = reason
                 resolved_dtype = self._resolve_dtype(torch, resolved_device)
-                local_only = bool(offline_if_cached and self.is_cached())
+                local_only = cached
                 model_kwargs = {"dtype": resolved_dtype}
                 if local_only:
-                    # Never touch the network when the files are already here.
                     model_kwargs["local_files_only"] = True
+
+                # Load by local path when we have one. Passing the repo id
+                # would still let the library resolve the revision against the
+                # Hub, which is exactly the network call we are avoiding.
+                source = self.model_id
+                if local_only:
+                    snapshot = find_cached_snapshot(
+                        self.model_dir, self.model_id)
+                    if snapshot is not None:
+                        source = str(snapshot)
 
                 # Disable the vision and audio encoders: this service only
                 # embeds text. config_kwargs is the officially documented way
                 # to skip those modules (270M vs 740M parameters).
                 self._model = SentenceTransformer(
-                    self.model_id,
+                    source,
                     device=resolved_device,
                     config_kwargs={
                         "vision_config": None,
