@@ -45,6 +45,34 @@ def test_installer_checks_for_its_ps1():
         )
 
 
+def test_setup_venv_guards_against_transient_locations():
+    """setup-venv must not silently build a .venv in Downloads.
+
+    A user who double-clicks setup-venv.cmd inside the extracted ZIP would
+    otherwise get a throwaway environment that is deleted with the folder.
+    install-service.cmd passes --no-pause, which is the supported path.
+    """
+
+    text = (SERVICE_DIR / "setup-venv.cmd").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert "TRANSIENT" in text
+    assert "Downloads" in text
+    assert "install-service.cmd" in text
+    # The guard must be bypassed by the installer's --no-pause call.
+    assert "if not defined NO_PAUSE" in text
+    assert ":transient_location" in text
+
+
+def test_install_service_uses_no_pause():
+    script = (SERVICE_DIR / "install-service.ps1").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert "--no-pause" in script, (
+        "install-service.ps1 must call setup-venv.cmd with --no-pause"
+    )
+
+
 def test_cmd_files_exist():
     names = {p.name for p in CMD_FILES}
     for expected in (

@@ -241,7 +241,7 @@ if (-not $SkipPackage) {
     -Filter "__pycache__" -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
 
-  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.5.6.zip"
+  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.5.7.zip"
   if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
   }

@@ -24,7 +24,41 @@ set VENV_DIR=%SCRIPT_DIR%.venv
 set PYTHON_EXE=
 set PYTHON_ARGS=
 set NO_PAUSE=
+set TRANSIENT=
 if /i "%~1"=="--no-pause" set NO_PAUSE=1
+
+REM --- guard: do not build a .venv in a temporary/extracted location ---------
+REM A user who double-clicks setup-venv.cmd inside the extracted ZIP would get a
+REM .venv in Downloads, which is deleted with the folder and is not what the
+REM add-in uses. install-service.cmd creates it in the permanent location
+REM instead, then calls this script with --no-pause.
+echo %SCRIPT_DIR% | findstr /i "Downloads Temp Desktop" >nul && set TRANSIENT=1
+if defined TRANSIENT if not defined NO_PAUSE goto :transient_location
+goto :discover_python
+
+:transient_location
+echo ============================================================
+echo Please use install-service.cmd instead
+echo ============================================================
+echo.
+echo This folder looks like a temporary or download location:
+echo   %SCRIPT_DIR%
+echo.
+echo A virtual environment created here would be deleted together with
+echo this folder, and semantic search would stop working.
+echo.
+echo Close this window and run install-service.cmd instead. It copies
+echo the service to a permanent location and creates the environment
+echo there, after which this folder can be deleted.
+echo.
+echo To continue here anyway, run from a command prompt:
+echo   setup-venv.cmd --no-pause
+echo.
+pause
+exit /b 1
+
+:discover_python
+REM --- 1. the py launcher, preferring a supported version ----------------
 
 REM --- 1. the py launcher, preferring a supported version ----------------
 where py >nul 2>nul

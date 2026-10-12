@@ -7,6 +7,27 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.5.7 修复：避免在下载目录创建虚拟环境
+
+- 新增保护：如果直接双击解压目录中的 `setup-venv.cmd`（通常位于
+  Downloads 或 Temp），脚本会拒绝在下载目录创建 `.venv`，
+  而是提示改用 `install-service.cmd`。
+- 原因：在下载目录创建的虚拟环境会随文件夹一起被删除，导致语义搜索
+  失效。正确入口是 `install-service.cmd`，它把服务安装到固定位置并在
+  那里创建环境。
+- `setup-venv.cmd --no-pause` 仍可供 `install-service.ps1` 非交互调用。
+- 新增 2 个批处理测试覆盖此保护。
+
+## 0.5.6 修复：避免从 ZIP 内直接运行安装脚本
+
+- `Install.cmd` / `Uninstall.cmd` 现在会先检查旁边的 `.ps1` 是否存在。
+  如果直接从 ZIP 压缩包内双击，Windows 的临时解压目录可能不完整，
+  导致 PowerShell 报 `install.ps1 不存在`。此时会明确提示“请先解压整个
+  ZIP 再运行”。
+- 修复一个误导性提示：之前 PowerShell 失败后仍显示 `Installation
+  completed.`。现在会正确传播退出码，失败时显示 `Installation FAILED`。
+- 安装脚本测试扩展到 `desktop/installer/` 目录。
+
 ## 0.5.5 修复：拦截过新的 Python
 
 - 修复安装失败：目标电脑上的 Python 3.15 太新，PyTorch/PyYAML 都没有
@@ -120,7 +141,7 @@ classic Outlook 用户级 COM 加载项。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.5.5.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.5.7.zip` 已生成。
 
 ## 尚需用户手动验收
 
