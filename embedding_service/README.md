@@ -30,6 +30,17 @@ The add-in reads the shared token from
 `%LOCALAPPDATA%\OutlookAiAssistant\semantic-service-token` and sends it as a
 bearer token. The token is created automatically on first start.
 
+### Prerequisites
+
+- Python 3.10–3.12 must be installed from python.org with
+  **Add python.exe to PATH** enabled.
+- If `setup-venv.cmd` reports that Python was not found, or shows a Microsoft
+  Store message, the `python` command is pointing at the Store stub. Disable
+  the `python.exe` / `python3.exe` aliases under
+  Settings > Apps > Advanced app settings > App execution aliases, then retry.
+  `setup-venv.cmd` prefers the `py` launcher and skips the Store stub on
+  PATH, and also probes the usual install directories.
+
 ### Why the download step is separate
 
 `google/embeddinggemma-2` is not bundled with the release (it is several GB).

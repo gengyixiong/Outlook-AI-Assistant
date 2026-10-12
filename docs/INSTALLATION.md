@@ -106,6 +106,23 @@ Outlook UI。
 
 ## 语义搜索不可用
 
+### 第一步就报 “Python was not found / Microsoft Store”
+
+这说明 `python` 指向了 Microsoft Store 的占位程序，而不是真正的安装。
+按以下顺序处理：
+
+1. 从 https://www.python.org/downloads/ 安装 Python 3.10–3.12，安装时勾选
+   **Add python.exe to PATH**。
+2. 如果已经安装但仍报这个错，打开
+   **设置 > 应用 > 高级应用设置 > 应用执行别名**，把 `python.exe` 和
+   `python3.exe` 两个别名**关掉**。
+3. 重新运行 `setup-venv.cmd`。
+
+`setup-venv.cmd` 会优先使用 `py` 启动器，并在 PATH 中自动跳过 Store
+占位程序，也会尝试常见的安装目录，因此只要真正装了 Python 就能找到。
+
+### 服务或模型问题
+
 1. 打开“语义搜索”页，点击“检查本地服务”，确认服务已在运行。
 2. 如果提示服务未运行，重新双击 `embedding_service\start-service.cmd`。
 3. 查看服务日志：

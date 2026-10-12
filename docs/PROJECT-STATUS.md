@@ -7,6 +7,14 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.5.3 修复：Python 发现与 Store 别名
+
+- `setup-venv.cmd` 现在优先使用 `py` 启动器，自动跳过 PATH 中指向
+  Microsoft Store 占位程序的 `python.exe`，并探测常见安装目录。
+- 当真正的 Python 不存在时，给出包含“关闭应用执行别名”步骤的明确指引，
+  而不是含糊失败。
+- `download-model.cmd` / `start-service.cmd` 在 venv 缺失时也给出同样指引。
+
 ## 0.5.2 修复：模型下载体验
 
 - 修复 `download-model.cmd` / `setup-venv.cmd` / `start-service.cmd` 窗口
@@ -86,7 +94,7 @@ classic Outlook 用户级 COM 加载项。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.5.2.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.5.3.zip` 已生成。
 
 ## 尚需用户手动验收
 

@@ -13,7 +13,11 @@ set SCRIPT_DIR=%~dp0
 set VENV_DIR=%SCRIPT_DIR%.venv
 
 if not exist "%VENV_DIR%\Scripts\python.exe" (
-  echo Virtual environment not found. Run setup-venv.cmd first.
+  echo Virtual environment not found.
+  echo Run setup-venv.cmd first to install the Python dependencies.
+  echo If that step failed with a Microsoft Store message, disable the
+  echo python.exe / python3.exe aliases under Settings ^> Apps ^>
+  echo Advanced app settings ^> App execution aliases, then retry.
   echo.
   pause
   exit /b 1
