@@ -46,9 +46,8 @@ if not defined PYTHON_EXE (
     if not defined PYTHON_EXE (
       echo %%p | findstr /i "WindowsApps" >nul
       if errorlevel 1 (
-        for /f "delims=" %%c in ('"%%p" -c "import sys;print(1 if (3,10)<=sys.version_info<(3,13) else 0)" 2^>nul') do (
-          if "%%c"=="1" set "PYTHON_EXE=%%p"
-        )
+        "%%p" -c "import sys;sys.exit(0 if sys.version_info[:2] in ((3,10),(3,11),(3,12)) else 1)" >nul 2>nul
+        if not errorlevel 1 set "PYTHON_EXE=%%p"
       )
     )
   )
@@ -72,8 +71,13 @@ if not defined PYTHON_EXE (
 
 if not defined PYTHON_EXE (
   echo ============================================================
-  echo A supported Python (3.10, 3.11 or 3.12) was not found.
+  echo A supported Python ^(3.10, 3.11 or 3.12^) was not found.
   echo ============================================================
+  echo.
+  echo Installed Python versions reported by the py launcher:
+  echo.
+  py -0 2>nul
+  if errorlevel 1 echo   ^(the py launcher is not available^)
   echo.
   echo Python 3.13 and newer cannot be used: PyTorch does not publish
   echo prebuilt wheels for them yet, so installation fails while
@@ -81,10 +85,10 @@ if not defined PYTHON_EXE (
   echo.
   echo Install Python 3.12 from:
   echo   https://www.python.org/downloads/release/python-3129/
-  echo Tick "Add python.exe to PATH" during setup, then re-run this script.
+  echo Tick 'Add python.exe to PATH' during setup, then re-run this script.
   echo.
-  echo Do NOT install the "Microsoft Store" version of Python; it is a
-  echo stub. If "python" opens the Store, turn off the python.exe and
+  echo Do NOT install the Microsoft Store version of Python; it is a
+  echo stub. If 'python' opens the Store, turn off the python.exe and
   echo python3.exe aliases under:
   echo   Settings ^> Apps ^> Advanced app settings ^> App execution aliases
   echo.
@@ -101,7 +105,7 @@ if errorlevel 1 (
 )
 
 REM Final safety check: refuse an unsupported interpreter explicitly.
-"%PYTHON_EXE%" -c "import sys;sys.exit(0 if (3,10)<=sys.version_info<(3,13) else 1)"
+"%PYTHON_EXE%" -c "import sys;sys.exit(0 if sys.version_info[:2] in ((3,10),(3,11),(3,12)) else 1)"
 if errorlevel 1 (
   echo.
   echo This Python is not supported. Use Python 3.10-3.12.
