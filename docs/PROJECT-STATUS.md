@@ -7,6 +7,23 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.7.2 修复：有 NVIDIA GPU 却仍用 CPU
+
+- 定位根因：安装脚本选用的 CUDA 通道是 **cu124**，但 torch 2.14.x 在
+  Windows 上**只发布 cu130 和 cpu 两个 wheel**。于是 pip 安装失败，
+  脚本**静默回退**到 CPU 版，运行时自然报“no CUDA GPU detected”。
+- 另一个隐患：RTX 50 系列（Blackwell, sm_120）需要 **CUDA >= 12.8**，
+  cu124/cu126 本就不适用。
+- 修复：CUDA 通道改为 **cu130**；`nvidia-smi` 除 PATH 外还探测
+  `System32` 与 `NVSMI` 常见路径。
+- 不再静默降级：CUDA 安装失败时打印醒目 WARNING，说明 GPU 不会启用并
+  提示更新驱动；安装后额外打印 torch 版本与 `cuda.is_available()`。
+- 运行时诊断信息更准确：区分“装的是 CPU 版 torch”与“有 CUDA 构建但
+  设备不可用”，不再笼统说 “no CUDA GPU detected”。
+- 新增测试锁定 cu130 选择（防止改回不存在的 cu124）。
+- 注：本机为 AMD 显卡，无法实测 NVIDIA 路径；CUDA 通道与 wheel 可用性
+  已通过 PyPI/download.pytorch.org 实际校验。
+
 ## 0.7.1 修复：启动服务按钮仍然失败
 
 - 定位并修复真正的原因：向 `cmd.exe` 传递启动命令时引号形式错误。
@@ -266,11 +283,11 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - C# 单元测试：25/25 通过。
-- Python 单元测试：126/126 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
+- Python 单元测试：127/127 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.7.1.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.7.2.zip` 已生成。
 
 ## 尚需用户手动验收
 

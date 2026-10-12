@@ -141,11 +141,26 @@ for troubleshooting, set `OAA_SERVICE_CONSOLE=1` before starting Outlook.
 
 The compute device is auto-detected. With a usable NVIDIA GPU the service
 runs on CUDA in `bfloat16`; otherwise it falls back to CPU in `float32`.
+The device actually in use is shown in the add-in and in `/health`
+(`device`, `device_reason`). Force a choice with `OAA_DEVICE=cpu` or
+`OAA_DEVICE=cuda`.
+
 `setup-venv.cmd` installs the CUDA PyTorch build when `nvidia-smi` reports a
-GPU, and the CPU build otherwise (or if the CUDA install fails). AMD GPUs are
-treated as CPU because there is no usable ROCm path on Windows. Force a
-choice with `OAA_DEVICE=cpu` or `OAA_DEVICE=cuda`. The device actually in use
-is shown in the add-in and in `/health` (`device`, `device_reason`).
+GPU. It probes `System32` and the `NVSMI` folder as well as PATH, because
+`nvidia-smi` is often not on PATH.
+
+The CUDA channel is **cu130**. This is deliberate:
+
+* torch 2.14.x publishes Windows wheels only for `cu130` and `cpu`; the older
+  `cu124` channel has no wheel for it, so pip fails and a silent fallback to
+  CPU used to happen on GPU machines.
+* RTX 50-series (Blackwell, sm_120) requires CUDA >= 12.8, so cu124/cu126 are
+  not usable anyway.
+
+A recent NVIDIA driver is still required. If the CUDA install fails, setup
+prints a clear WARNING and continues on CPU rather than failing; update the
+driver and re-run `setup-venv.cmd` to enable the GPU. AMD GPUs are treated as
+CPU because there is no usable ROCm path on Windows.
 
 ## Where the model is stored
 

@@ -139,7 +139,23 @@ def detect_device(preferred: str = "auto") -> tuple:
         except Exception:
             name = "CUDA device"
         return "cuda", "auto-detected NVIDIA GPU: %s" % name
-    return "cpu", "no CUDA GPU detected"
+
+    # Report why CUDA is not usable. "No GPU detected" is misleading when the
+    # real cause is a CPU-only PyTorch build, which is the common case after a
+    # silent fallback during setup.
+    try:
+        build = getattr(getattr(torch, "version", None), "cuda", None)
+    except Exception:
+        build = None
+    if not build:
+        return "cpu", (
+            "CPU-only PyTorch is installed; re-run setup-venv.cmd with an "
+            "NVIDIA driver present to enable the GPU"
+        )
+    return "cpu", (
+        "PyTorch was built for CUDA %s but no usable device was found "
+        "(driver or GPU unsupported)" % build
+    )
 
 
 class _ProgressReporter:

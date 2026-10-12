@@ -183,20 +183,44 @@ REM Choose a GPU or CPU build automatically. An NVIDIA GPU with a working
 REM driver gets the CUDA build; everything else (no GPU, AMD GPU, or a
 REM missing driver) gets the CPU build. Windows has no usable ROCm path, so
 REM AMD is intentionally treated as CPU.
+REM
+REM cu130 (CUDA 13.0) is used on purpose:
+REM   * torch 2.14.x publishes Windows wheels only for cu130 and cpu.
+REM   * RTX 50-series (Blackwell, sm_120) requires CUDA >= 12.8, so older
+REM     cu124/cu126 channels are not an option.
+REM   * A recent NVIDIA driver is still required; if CUDA is unusable the
+REM     service falls back to CPU at runtime.
 set "TORCH_INDEX=https://download.pytorch.org/whl/cpu"
 set "TORCH_LABEL=CPU"
-where nvidia-smi >nul 2>nul
-if not errorlevel 1 (
-  nvidia-smi -L >nul 2>nul
+set "TORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu130"
+set "NV_SMI="
+
+REM nvidia-smi is not always on PATH; probe the usual locations too.
+for %%p in (
+  "%SystemRoot%\System32\nvidia-smi.exe"
+  "%ProgramFiles%\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+  "%ProgramW6432%\NVIDIA Corporation\NVSMI\nvidia-smi.exe"
+) do (
+  if not defined NV_SMI if exist %%p set "NV_SMI=%%~p"
+)
+if not defined NV_SMI (
+  for /f "delims=" %%i in ('where nvidia-smi 2^>nul') do (
+    if not defined NV_SMI set "NV_SMI=%%i"
+  )
+)
+
+if defined NV_SMI (
+  "%NV_SMI%" -L >nul 2>nul
   if not errorlevel 1 (
-    set "TORCH_INDEX=https://download.pytorch.org/whl/cu124"
-    set "TORCH_LABEL=NVIDIA CUDA (cu124)"
+    set "TORCH_INDEX=%TORCH_CUDA_INDEX%"
+    set "TORCH_LABEL=NVIDIA CUDA (cu130)"
   )
 )
 
 echo Selected build: %TORCH_LABEL%
 if "%TORCH_LABEL%"=="CPU" (
   echo   No NVIDIA GPU detected, or nvidia-smi is unavailable.
+  echo   The service will run on CPU.
 ) else (
   echo   NVIDIA GPU detected. The service will use it automatically.
 )
@@ -204,10 +228,24 @@ echo.
 python -m pip install torch torchvision --index-url %TORCH_INDEX%
 if errorlevel 1 (
   echo.
-  echo CUDA build failed to install; falling back to the CPU build...
+  if "%TORCH_LABEL%"=="CPU" (
+    goto :failed
+  )
+  REM Do not fail the whole install, but make the downgrade unmistakable
+  REM instead of silently shipping a CPU-only environment on a GPU machine.
+  echo ******************************************************************
+  echo WARNING: the CUDA build could not be installed.
+  echo Falling back to the CPU build; the GPU will NOT be used.
+  echo Most likely your NVIDIA driver is too old for CUDA 13.0.
+  echo Update the driver from https://www.nvidia.com/download/ and then
+  echo re-run setup-venv.cmd to enable GPU acceleration.
+  echo ******************************************************************
   python -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
   if errorlevel 1 goto :failed
 )
+
+REM Verify what actually got installed and say so plainly.
+python -c "import torch;print('torch:',torch.__version__);print('CUDA available:',torch.cuda.is_available())"
 
 echo.
 echo Installing remaining dependencies...

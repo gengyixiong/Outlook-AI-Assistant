@@ -143,3 +143,24 @@ def test_crlf_line_endings(cmd_file):
     assert not (has_crlf and has_lone_lf), (
         "%s mixes CRLF and LF line endings" % cmd_file.name
     )
+
+
+def test_setup_venv_uses_a_cuda_channel_that_exists():
+    """torch 2.14.x only publishes Windows wheels for cu130 and cpu.
+
+    cu124 was used before and does not exist for this torch version, so pip
+    failed and silently fell back to CPU on machines with an NVIDIA GPU.
+    RTX 50-series also needs CUDA >= 12.8, which rules out cu124/cu126.
+    """
+
+    text = (SERVICE_DIR / "setup-venv.cmd").read_text(
+        encoding="utf-8", errors="replace"
+    )
+    assert "whl/cu130" in text, (
+        "the CUDA channel must be cu130; cu124 has no torch 2.14 wheels"
+    )
+    assert "whl/cu124" not in text
+    # nvidia-smi is not always on PATH, so common locations must be probed.
+    assert "NVSMI" in text or "System32\nvidia-smi.exe" in text
+    # A silent GPU->CPU downgrade hid this bug once already.
+    assert "WARNING" in text

@@ -25,7 +25,9 @@ def test_auto_falls_back_to_cpu_without_cuda(monkeypatch):
 
     device, reason = detect_device("auto")
     assert device == "cpu"
-    assert "cuda" in reason.lower()
+    # A CPU-only torch build is the common cause; the message must say so
+    # instead of a vague "no GPU", so the fix is obvious.
+    assert "cpu-only" in reason.lower() or "cuda" in reason.lower()
 
 
 def test_auto_uses_cuda_when_available(monkeypatch):
