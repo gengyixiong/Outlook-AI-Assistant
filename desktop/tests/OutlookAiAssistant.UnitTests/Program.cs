@@ -125,44 +125,71 @@ namespace OutlookAiAssistant.UnitTests
             result.Snippet = "Regarding the curtain wall edit, can we also "
                 + "edit the Panels individually?";
 
-            Control card = AssistantPaneControl.BuildResultCardControl(
-                result, 1, new Font("Segoe UI", 9F),
-                delegate { }, delegate { });
-
             using (Form host = new Form())
             {
-                host.Width = 410;
                 host.Height = 600;
-                FlowLayoutPanel panel = new FlowLayoutPanel();
-                panel.Dock = DockStyle.Fill;
-                panel.FlowDirection = FlowDirection.TopDown;
-                panel.WrapContents = false;
-                panel.AutoScroll = true;
-                panel.Controls.Add(card);
-                host.Controls.Add(panel);
-                host.Show();
-                Application.DoEvents();
-                panel.PerformLayout();
-                card.PerformLayout();
-                host.PerformLayout();
-                Application.DoEvents();
 
-                True(card.Width >= 200,
-                    "result card must be wide enough to read, got " + card.Width);
+                // Mirror the real container: a TableLayoutPanel with one
+                // 100%-wide column, where each card is a full-width row.
+                TableLayoutPanel panel = new TableLayoutPanel();
+                panel.Dock = DockStyle.Fill;
+                panel.ColumnCount = 1;
+                panel.AutoScroll = true;
+                panel.ColumnStyles.Add(
+                    new ColumnStyle(SizeType.Percent, 100F));
+                host.Controls.Add(panel);
+
+                Control card = AssistantPaneControl.BuildResultCardControl(
+                    result, 1, new Font("Segoe UI", 9F),
+                    delegate { }, delegate { });
+                panel.RowCount = 1;
+                panel.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+                card.Dock = DockStyle.Fill;
+                panel.Controls.Add(card, 0, 0);
+
+                host.Show();
+
+                int wideWidth;
+                int narrowWidth;
+
+                host.Width = 500;
+                Layout(host, panel, card);
+                wideWidth = card.Width;
                 True(card.Height >= 80,
-                    "result card must be tall enough to read, got " + card.Height);
-                True(card.Width <= panel.Width + 40,
-                    "result card must fit the results panel, got " + card.Width
-                    + " in " + panel.Width);
+                    "card must be tall enough to read, got " + card.Height);
+                True(card.Width >= 200,
+                    "card must be wide enough to read, got " + card.Width);
 
                 Button open = FindButton(card, "打开邮件");
                 Button outlook = FindButton(card, "Outlook 搜索");
                 True(open != null, "card must expose an open button");
                 True(outlook != null, "card must expose an Outlook search button");
-                // The buttons must be reachable (inside the card bounds).
                 True(open.Width > 0 && open.Height > 0, "open button must render");
+
+                // Narrow the host: the card must shrink with the pane instead
+                // of keeping a fixed width and being clipped.
+                host.Width = 340;
+                Layout(host, panel, card);
+                narrowWidth = card.Width;
+
+                True(narrowWidth <= panel.Width,
+                    "card must fit the panel when narrow, got " + narrowWidth
+                    + " in " + panel.Width);
+                True(narrowWidth < wideWidth,
+                    "card must shrink with the pane; wide=" + wideWidth
+                    + " narrow=" + narrowWidth);
+
                 host.Close();
             }
+        }
+
+        private static void Layout(Form host, Control panel, Control card)
+        {
+            Application.DoEvents();
+            panel.PerformLayout();
+            card.PerformLayout();
+            host.PerformLayout();
+            Application.DoEvents();
         }
 
         private static Button FindButton(Control root, string text)

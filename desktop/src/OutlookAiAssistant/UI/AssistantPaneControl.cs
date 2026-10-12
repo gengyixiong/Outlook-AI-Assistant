@@ -41,7 +41,7 @@ namespace OutlookAiAssistant.UI
         private Button _openServiceButton;
         private Label _semanticServiceStatus;
         private Label _semanticIndexStatus;
-        private FlowLayoutPanel _semanticResultsPanel;
+        private TableLayoutPanel _semanticResultsPanel;
         private Label _semanticStatus;
         private bool _semanticBusy;
         private CancellationTokenSource _indexCancellation;
@@ -155,7 +155,7 @@ namespace OutlookAiAssistant.UI
             // Service + model + index status, always visible at the top.
             _semanticServiceStatus = new Label();
             _semanticServiceStatus.AutoSize = true;
-            _semanticServiceStatus.MaximumSize = new Size(350, 0);
+            _semanticServiceStatus.Dock = DockStyle.Top;
             _semanticServiceStatus.Font = new Font(Font, FontStyle.Bold);
             _semanticServiceStatus.Text = "服务状态：正在检查…";
             layout.Controls.Add(_semanticServiceStatus);
@@ -165,7 +165,7 @@ namespace OutlookAiAssistant.UI
                 "用中文描述你要找的邮件内容，例如：\r\n"
                 + "之前印度客户问过幕墙玻璃 Panel 能不能单独编辑的邮件";
             prompt.AutoSize = true;
-            prompt.MaximumSize = new Size(350, 0);
+            prompt.Dock = DockStyle.Top;
             layout.Controls.Add(prompt);
 
             _semanticInput = new TextBox();
@@ -230,22 +230,28 @@ namespace OutlookAiAssistant.UI
 
             _semanticIndexStatus = new Label();
             _semanticIndexStatus.AutoSize = true;
-            _semanticIndexStatus.MaximumSize = new Size(350, 0);
+            _semanticIndexStatus.Dock = DockStyle.Top;
             _semanticIndexStatus.ForeColor = Color.DimGray;
             _semanticIndexStatus.Text = "索引状态：未检查";
             layout.Controls.Add(_semanticIndexStatus);
 
             _semanticStatus = new Label();
             _semanticStatus.AutoSize = true;
-            _semanticStatus.MaximumSize = new Size(350, 0);
+            _semanticStatus.Dock = DockStyle.Top;
             _semanticStatus.Text = string.Empty;
             layout.Controls.Add(_semanticStatus);
 
-            _semanticResultsPanel = new FlowLayoutPanel();
+            // A TableLayoutPanel with one 100%-wide column lets each result
+            // card stretch to the current pane width. A FlowLayoutPanel would
+            // keep the cards at a fixed width and clip them when the pane is
+            // narrowed, which is why the cards used to look cut off.
+            _semanticResultsPanel = new TableLayoutPanel();
             _semanticResultsPanel.Dock = DockStyle.Fill;
-            _semanticResultsPanel.FlowDirection = FlowDirection.TopDown;
-            _semanticResultsPanel.WrapContents = false;
+            _semanticResultsPanel.ColumnCount = 1;
             _semanticResultsPanel.AutoScroll = true;
+            _semanticResultsPanel.AutoSize = false;
+            _semanticResultsPanel.ColumnStyles.Add(
+                new ColumnStyle(SizeType.Percent, 100F));
             _semanticResultsPanel.Margin = new Padding(3, 8, 3, 3);
             layout.Controls.Add(_semanticResultsPanel);
 
@@ -400,6 +406,8 @@ namespace OutlookAiAssistant.UI
             try
             {
                 _semanticResultsPanel.Controls.Clear();
+                _semanticResultsPanel.RowStyles.Clear();
+                _semanticResultsPanel.RowCount = 0;
                 if (!outcome.Success)
                 {
                     _semanticStatus.Text = outcome.Message;
@@ -417,7 +425,7 @@ namespace OutlookAiAssistant.UI
                     index < outcome.Response.Results.Count;
                     index++)
                 {
-                    _semanticResultsPanel.Controls.Add(
+                    AddFullWidthRow(
                         BuildResultCard(
                             facade,
                             outcome.Response.Results[index],
@@ -430,13 +438,27 @@ namespace OutlookAiAssistant.UI
             }
         }
 
+        /// <summary>
+        /// Adds a control as a new row that spans the full panel width.
+        /// </summary>
+        private void AddFullWidthRow(Control control)
+        {
+            int row = _semanticResultsPanel.RowCount;
+            _semanticResultsPanel.RowCount = row + 1;
+            _semanticResultsPanel.RowStyles.Add(
+                new RowStyle(SizeType.AutoSize));
+            control.Dock = DockStyle.Fill;
+            control.Margin = new Padding(3, 4, 3, 4);
+            _semanticResultsPanel.Controls.Add(control, 0, row);
+        }
+
         private void AddSemanticFallbackControls(SemanticSearchFacade facade)
         {
             Button checkService = new Button();
             checkService.Text = "检查本地服务状态";
             checkService.AutoSize = true;
             checkService.Click += CheckServiceClicked;
-            _semanticResultsPanel.Controls.Add(checkService);
+            AddFullWidthRow(checkService);
 
             Button outlookSearch = new Button();
             outlookSearch.Text = "改用 Outlook 原生搜索";
@@ -445,7 +467,7 @@ namespace OutlookAiAssistant.UI
             {
                 SelectSearchTab();
             };
-            _semanticResultsPanel.Controls.Add(outlookSearch);
+            AddFullWidthRow(outlookSearch);
         }
 
         private Control BuildResultCard(
@@ -477,9 +499,14 @@ namespace OutlookAiAssistant.UI
 
         /// <summary>
         /// Builds one result card. Kept static and free of Outlook access so
-        /// the layout can be unit tested; a previous version used nested
-        /// Dock=Top panels that collapsed to an 18-pixel-wide sliver inside
-        /// the scrolling results panel, which made every result invisible.
+        /// the layout can be unit tested.
+        ///
+        /// The card is width-agnostic: the outer frame docks to fill its table
+        /// row, and the inner labels auto-size and wrap to whatever width the
+        /// pane currently has. This lets the cards grow and shrink with the
+        /// Outlook side pane. Two earlier problems are guarded against: nested
+        /// Dock=Top panels collapsing to a sliver, and a fixed pixel width that
+        /// clipped content when the pane was narrow.
         /// </summary>
         public static Control BuildResultCardControl(
             SemanticSearchResult result,
@@ -488,30 +515,22 @@ namespace OutlookAiAssistant.UI
             Action openAction,
             Action outlookAction)
         {
-            // A single-column TableLayoutPanel with AutoSize rows is the most
-            // reliable layout inside an auto-scrolling FlowLayoutPanel.
-            const int cardWidth = 330;
-            const int textWidth = cardWidth - 28;
-
             TableLayoutPanel card = new TableLayoutPanel();
             card.ColumnCount = 1;
+            card.Dock = DockStyle.Top;
             card.AutoSize = true;
             card.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            // Fix the width so labels wrap predictably; the panel still grows
-            // vertically with the content.
-            card.Width = cardWidth;
-            card.MinimumSize = new Size(cardWidth, 0);
-            card.MaximumSize = new Size(cardWidth, 0);
-            card.Margin = new Padding(3, 4, 3, 4);
             card.Padding = new Padding(8);
+            card.Margin = new Padding(0);
             card.BackColor = Color.White;
             card.CellBorderStyle = TableLayoutPanelCellBorderStyle.None;
+            card.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
             Label title = new Label();
             title.Text = rank + ". " + DisplaySubjectStatic(result.Subject);
             title.Font = new Font(baseFont, FontStyle.Bold);
             title.AutoSize = true;
-            title.MaximumSize = new Size(textWidth, 0);
+            title.Dock = DockStyle.Top;
             title.Margin = new Padding(0, 0, 0, 2);
             card.Controls.Add(title);
 
@@ -520,9 +539,9 @@ namespace OutlookAiAssistant.UI
                 + FormatDate(result.ReceivedAt)
                 + (string.IsNullOrWhiteSpace(result.FolderPath)
                     ? string.Empty
-                    : "  ·  " + result.FolderPath);;
+                    : "  ·  " + result.FolderPath);
             meta.AutoSize = true;
-            meta.MaximumSize = new Size(textWidth, 0);
+            meta.Dock = DockStyle.Top;
             meta.ForeColor = Color.DimGray;
             meta.Margin = new Padding(0, 0, 0, 4);
             card.Controls.Add(meta);
@@ -532,7 +551,7 @@ namespace OutlookAiAssistant.UI
                 Label attachments = new Label();
                 attachments.Text = "附件：" + result.AttachmentNames;
                 attachments.AutoSize = true;
-                attachments.MaximumSize = new Size(textWidth, 0);
+                attachments.Dock = DockStyle.Top;
                 attachments.ForeColor = Color.DimGray;
                 attachments.Margin = new Padding(0, 0, 0, 4);
                 card.Controls.Add(attachments);
@@ -543,14 +562,15 @@ namespace OutlookAiAssistant.UI
                 ? "（无正文片段）"
                 : result.Snippet;
             snippet.AutoSize = true;
-            snippet.MaximumSize = new Size(textWidth, 0);
+            snippet.Dock = DockStyle.Top;
             snippet.Margin = new Padding(0, 0, 0, 6);
             card.Controls.Add(snippet);
 
             FlowLayoutPanel buttons = new FlowLayoutPanel();
             buttons.AutoSize = true;
             buttons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            buttons.WrapContents = false;
+            buttons.Dock = DockStyle.Top;
+            buttons.WrapContents = true;
             buttons.Margin = new Padding(0);
             buttons.MinimumSize = new Size(0, 32);
 
@@ -567,16 +587,16 @@ namespace OutlookAiAssistant.UI
             buttons.Controls.Add(outlook);
             card.Controls.Add(buttons);
 
-            // Give the card a visible outline without a BorderStyle, which
-            // does not render on an AutoSize panel.
+            // A Panel with BorderStyle draws the card outline reliably and
+            // docks to the row width so it resizes with the pane.
             Panel frame = new Panel();
             frame.BorderStyle = BorderStyle.FixedSingle;
+            frame.Dock = DockStyle.Fill;
             frame.AutoSize = true;
             frame.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            frame.Margin = new Padding(3, 4, 3, 4);
+            frame.Margin = new Padding(0);
             frame.Padding = new Padding(1);
             frame.Controls.Add(card);
-            card.Margin = new Padding(0);
             return frame;
         }
 
