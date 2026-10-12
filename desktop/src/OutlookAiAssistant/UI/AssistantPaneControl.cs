@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using OutlookAiAssistant.AddIn;
+using OutlookAiAssistant.AI;
 using OutlookAiAssistant.Configuration;
 using OutlookAiAssistant.Diagnostics;
 using OutlookAiAssistant.Models;
@@ -23,6 +24,7 @@ namespace OutlookAiAssistant.UI
     [ClassInterface(ClassInterfaceType.AutoDual)]
     public sealed class AssistantPaneControl : UserControl
     {
+        private TabControl _tabs;
         private Button _summarizeButton;
         private Label _mailInfo;
         private RichTextBox _summaryOutput;
@@ -48,6 +50,23 @@ namespace OutlookAiAssistant.UI
         private bool _semanticBusy;
         private CancellationTokenSource _indexCancellation;
 
+        // In-place Settings page.
+        private TextBox _settingsBaseUrl;
+        private TextBox _settingsApiKey;
+        private CheckBox _settingsShowApiKey;
+        private CheckBox _settingsClearApiKey;
+        private ComboBox _settingsModel;
+        private ComboBox _settingsReasoningEffort;
+        private ComboBox _settingsLanguage;
+        private NumericUpDown _settingsMaxCharacters;
+        private TextBox _settingsIdentityEmails;
+        private TextBox _settingsIdentityAliases;
+        private Button _settingsSaveButton;
+        private Label _settingsSaveStatus;
+        private Button _openModelDirButton;
+        private Button _openIndexDirButton;
+        private Button _openLogDirButton;
+
         public AssistantPaneControl()
         {
             Font = new Font("Segoe UI", 9F);
@@ -56,7 +75,7 @@ namespace OutlookAiAssistant.UI
             BuildInterface();
             Load += delegate
             {
-                RefreshSettingsStatus();
+                LoadSettingsToUI();
                 RefreshSemanticIndexStatus();
             };
         }
@@ -71,13 +90,13 @@ namespace OutlookAiAssistant.UI
             root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Controls.Add(root);
 
-            TabControl tabs = new TabControl();
-            tabs.Dock = DockStyle.Fill;
-            tabs.Margin = new Padding(10, 8, 10, 4);
-            tabs.TabPages.Add(BuildSummaryPage());
-            tabs.TabPages.Add(BuildSemanticSearchPage());
-            tabs.TabPages.Add(BuildSettingsPage());
-            root.Controls.Add(tabs);
+            _tabs = new TabControl();
+            _tabs.Dock = DockStyle.Fill;
+            _tabs.Margin = new Padding(10, 8, 10, 4);
+            _tabs.TabPages.Add(BuildSummaryPage());
+            _tabs.TabPages.Add(BuildSemanticSearchPage());
+            _tabs.TabPages.Add(BuildSettingsPage());
+            root.Controls.Add(_tabs);
 
             _status = new Label();
             _status.Text = "就绪";
@@ -144,8 +163,7 @@ namespace OutlookAiAssistant.UI
             TableLayoutPanel layout = new TableLayoutPanel();
             layout.Dock = DockStyle.Fill;
             layout.ColumnCount = 1;
-            layout.RowCount = 8;
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowCount = 7;
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -161,14 +179,6 @@ namespace OutlookAiAssistant.UI
             _semanticServiceStatus.Font = new Font(Font, FontStyle.Bold);
             _semanticServiceStatus.Text = "服务状态：正在检查…";
             layout.Controls.Add(_semanticServiceStatus);
-
-            Label prompt = new Label();
-            prompt.Text =
-                "用中文描述你要找的邮件内容，例如：\r\n"
-                + "之前印度客户问过幕墙玻璃 Panel 能不能单独编辑的邮件";
-            prompt.AutoSize = true;
-            prompt.Dock = DockStyle.Top;
-            layout.Controls.Add(prompt);
 
             _semanticInput = new TextBox();
             _semanticInput.Multiline = true;
@@ -229,14 +239,6 @@ namespace OutlookAiAssistant.UI
             _semanticStopServiceButton.Click += SemanticStopServiceClicked;
             actions.Controls.Add(_semanticStopServiceButton);
 
-            _semanticDownloadModelButton = new Button();
-            _semanticDownloadModelButton.Text = "下载模型";
-            _semanticDownloadModelButton.AutoSize = true;
-            _semanticDownloadModelButton.MinimumSize = new Size(88, 29);
-            _semanticDownloadModelButton.Margin = new Padding(3, 0, 3, 3);
-            _semanticDownloadModelButton.Click += SemanticDownloadModelClicked;
-            actions.Controls.Add(_semanticDownloadModelButton);
-
             _openServiceButton = new Button();
             _openServiceButton.Text = "刷新状态";
             _openServiceButton.AutoSize = true;
@@ -280,42 +282,262 @@ namespace OutlookAiAssistant.UI
         private TabPage BuildSettingsPage()
         {
             TabPage page = new TabPage("设置");
-            page.Padding = new Padding(12);
-            TableLayoutPanel layout = new TableLayoutPanel();
-            layout.Dock = DockStyle.Fill;
-            layout.ColumnCount = 1;
-            layout.RowCount = 3;
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+            page.Padding = new Padding(0);
 
+            Panel scroll = new Panel();
+            scroll.Dock = DockStyle.Fill;
+            scroll.AutoScroll = true;
+            scroll.Padding = new Padding(12);
+
+            TableLayoutPanel layout = new TableLayoutPanel();
+            layout.Dock = DockStyle.Top;
+            layout.AutoSize = true;
+            layout.AutoSizeMode = AutoSizeMode.GrowAndShrink;
+            layout.ColumnCount = 1;
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+            // Status label at the top
             _configurationStatus = new Label();
             _configurationStatus.AutoSize = true;
-            _configurationStatus.MaximumSize = new Size(350, 0);
+            _configurationStatus.Dock = DockStyle.Top;
+            _configurationStatus.Font = new Font(Font, FontStyle.Bold);
+            _configurationStatus.Margin = new Padding(0, 0, 0, 10);
             layout.Controls.Add(_configurationStatus);
 
-            Button settingsButton = CreatePrimaryButton("打开 API 设置");
-            settingsButton.Margin = new Padding(3, 12, 3, 12);
-            settingsButton.Click += delegate
+            // --- API Configuration Section Header ---
+            Label apiHeader = new Label();
+            apiHeader.Text = "API 接口配置 (OpenAI-Compatible)";
+            apiHeader.Font = new Font(Font, FontStyle.Bold);
+            apiHeader.AutoSize = true;
+            apiHeader.Dock = DockStyle.Top;
+            apiHeader.Margin = new Padding(0, 4, 0, 4);
+            layout.Controls.Add(apiHeader);
+
+            // Base URL
+            Label urlLabel = new Label();
+            urlLabel.Text = "Base URL：";
+            urlLabel.AutoSize = true;
+            urlLabel.Dock = DockStyle.Top;
+            urlLabel.Margin = new Padding(0, 4, 0, 2);
+            layout.Controls.Add(urlLabel);
+
+            _settingsBaseUrl = new TextBox();
+            _settingsBaseUrl.Dock = DockStyle.Top;
+            _settingsBaseUrl.Margin = new Padding(0, 0, 0, 6);
+            layout.Controls.Add(_settingsBaseUrl);
+
+            // API Key
+            Label keyLabel = new Label();
+            keyLabel.Text = "API Key：";
+            keyLabel.AutoSize = true;
+            keyLabel.Dock = DockStyle.Top;
+            keyLabel.Margin = new Padding(0, 4, 0, 2);
+            layout.Controls.Add(keyLabel);
+
+            _settingsApiKey = new TextBox();
+            _settingsApiKey.Dock = DockStyle.Top;
+            _settingsApiKey.UseSystemPasswordChar = true;
+            _settingsApiKey.Margin = new Padding(0, 0, 0, 4);
+            layout.Controls.Add(_settingsApiKey);
+
+            FlowLayoutPanel keyOptions = new FlowLayoutPanel();
+            keyOptions.AutoSize = true;
+            keyOptions.Dock = DockStyle.Top;
+            keyOptions.Margin = new Padding(0, 0, 0, 4);
+
+            _settingsShowApiKey = new CheckBox();
+            _settingsShowApiKey.Text = "显示密钥";
+            _settingsShowApiKey.AutoSize = true;
+            _settingsShowApiKey.Margin = new Padding(0, 0, 10, 0);
+            _settingsShowApiKey.CheckedChanged += delegate
             {
-                Connect addIn = Connect.Current;
-                if (addIn != null && addIn.ShowSettings(this))
-                {
-                    RefreshSettingsStatus();
-                    SetStatus("设置已保存。");
-                }
+                _settingsApiKey.UseSystemPasswordChar = !_settingsShowApiKey.Checked;
             };
-            layout.Controls.Add(settingsButton);
+            keyOptions.Controls.Add(_settingsShowApiKey);
+
+            _settingsClearApiKey = new CheckBox();
+            _settingsClearApiKey.Text = "清除已保存的密钥";
+            _settingsClearApiKey.AutoSize = true;
+            keyOptions.Controls.Add(_settingsClearApiKey);
+            layout.Controls.Add(keyOptions);
+
+            Label keyHint = new Label();
+            keyHint.Text = "留空表示继续使用已保存的密钥。密钥使用 Windows DPAPI 本地加密存储。更改服务地址后需重新输入密钥。";
+            keyHint.ForeColor = Color.DimGray;
+            keyHint.AutoSize = true;
+            keyHint.Dock = DockStyle.Top;
+            keyHint.Margin = new Padding(0, 0, 0, 8);
+            layout.Controls.Add(keyHint);
+
+            // Model
+            Label modelLabel = new Label();
+            modelLabel.Text = "Model (模型名称)：";
+            modelLabel.AutoSize = true;
+            modelLabel.Dock = DockStyle.Top;
+            modelLabel.Margin = new Padding(0, 4, 0, 2);
+            layout.Controls.Add(modelLabel);
+
+            _settingsModel = new ComboBox();
+            _settingsModel.Dock = DockStyle.Top;
+            _settingsModel.DropDownStyle = ComboBoxStyle.DropDown;
+            _settingsModel.Items.AddRange(new object[] { "gpt-5.6-luna", "gpt-4o", "deepseek-chat", "qwen-plus" });
+            _settingsModel.Margin = new Padding(0, 0, 0, 8);
+            layout.Controls.Add(_settingsModel);
+
+            // Reasoning Effort
+            Label effortLabel = new Label();
+            effortLabel.Text = "Reasoning Effort (推理力度)：";
+            effortLabel.AutoSize = true;
+            effortLabel.Dock = DockStyle.Top;
+            effortLabel.Margin = new Padding(0, 4, 0, 2);
+            layout.Controls.Add(effortLabel);
+
+            _settingsReasoningEffort = new ComboBox();
+            _settingsReasoningEffort.Dock = DockStyle.Top;
+            _settingsReasoningEffort.DropDownStyle = ComboBoxStyle.DropDownList;
+            _settingsReasoningEffort.Items.AddRange(new object[] { "None", "Medium", "Max" });
+            _settingsReasoningEffort.SelectedIndex = 0;
+            _settingsReasoningEffort.Margin = new Padding(0, 0, 0, 8);
+            layout.Controls.Add(_settingsReasoningEffort);
+
+            // Summary Language
+            Label langLabel = new Label();
+            langLabel.Text = "摘要语言：";
+            langLabel.AutoSize = true;
+            langLabel.Dock = DockStyle.Top;
+            langLabel.Margin = new Padding(0, 4, 0, 2);
+            layout.Controls.Add(langLabel);
+
+            _settingsLanguage = new ComboBox();
+            _settingsLanguage.Dock = DockStyle.Top;
+            _settingsLanguage.DropDownStyle = ComboBoxStyle.DropDownList;
+            _settingsLanguage.Items.AddRange(new object[] { "简体中文", "English", "跟随邮件语言" });
+            _settingsLanguage.SelectedIndex = 0;
+            _settingsLanguage.Margin = new Padding(0, 0, 0, 8);
+            layout.Controls.Add(_settingsLanguage);
+
+            // Max Characters
+            Label maxCharsLabel = new Label();
+            maxCharsLabel.Text = "正文字符上限：";
+            maxCharsLabel.AutoSize = true;
+            maxCharsLabel.Dock = DockStyle.Top;
+            maxCharsLabel.Margin = new Padding(0, 4, 0, 2);
+            layout.Controls.Add(maxCharsLabel);
+
+            _settingsMaxCharacters = new NumericUpDown();
+            _settingsMaxCharacters.Dock = DockStyle.Top;
+            _settingsMaxCharacters.Minimum = 5000;
+            _settingsMaxCharacters.Maximum = 200000;
+            _settingsMaxCharacters.Increment = 5000;
+            _settingsMaxCharacters.ThousandsSeparator = true;
+            _settingsMaxCharacters.Value = 30000;
+            _settingsMaxCharacters.Margin = new Padding(0, 0, 0, 8);
+            layout.Controls.Add(_settingsMaxCharacters);
+
+            // Identity Emails
+            Label emailsLabel = new Label();
+            emailsLabel.Text = "我的邮箱地址（每行一个）：";
+            emailsLabel.AutoSize = true;
+            emailsLabel.Dock = DockStyle.Top;
+            emailsLabel.Margin = new Padding(0, 4, 0, 2);
+            layout.Controls.Add(emailsLabel);
+
+            _settingsIdentityEmails = new TextBox();
+            _settingsIdentityEmails.Dock = DockStyle.Top;
+            _settingsIdentityEmails.Multiline = true;
+            _settingsIdentityEmails.Height = 50;
+            _settingsIdentityEmails.ScrollBars = ScrollBars.Vertical;
+            _settingsIdentityEmails.Margin = new Padding(0, 0, 0, 8);
+            layout.Controls.Add(_settingsIdentityEmails);
+
+            // Identity Aliases
+            Label aliasesLabel = new Label();
+            aliasesLabel.Text = "别人对我的称俗（每行一个）：";
+            aliasesLabel.AutoSize = true;
+            aliasesLabel.Dock = DockStyle.Top;
+            aliasesLabel.Margin = new Padding(0, 4, 0, 2);
+            layout.Controls.Add(aliasesLabel);
+
+            _settingsIdentityAliases = new TextBox();
+            _settingsIdentityAliases.Dock = DockStyle.Top;
+            _settingsIdentityAliases.Multiline = true;
+            _settingsIdentityAliases.Height = 50;
+            _settingsIdentityAliases.ScrollBars = ScrollBars.Vertical;
+            _settingsIdentityAliases.Margin = new Padding(0, 0, 0, 10);
+            layout.Controls.Add(_settingsIdentityAliases);
+
+            // Save Button + Save Status
+            FlowLayoutPanel saveRow = new FlowLayoutPanel();
+            saveRow.AutoSize = true;
+            saveRow.Dock = DockStyle.Top;
+            saveRow.Margin = new Padding(0, 0, 0, 14);
+
+            _settingsSaveButton = CreatePrimaryButton("保存设置");
+            _settingsSaveButton.AutoSize = true;
+            _settingsSaveButton.MinimumSize = new Size(110, 32);
+            _settingsSaveButton.Click += SaveSettingsClicked;
+            saveRow.Controls.Add(_settingsSaveButton);
+
+            _settingsSaveStatus = new Label();
+            _settingsSaveStatus.AutoSize = true;
+            _settingsSaveStatus.Anchor = AnchorStyles.Left;
+            _settingsSaveStatus.Margin = new Padding(8, 8, 0, 0);
+            saveRow.Controls.Add(_settingsSaveStatus);
+            layout.Controls.Add(saveRow);
+
+            // --- Semantic Model & Local Data Section Header ---
+            Label semanticHeader = new Label();
+            semanticHeader.Text = "本地语义搜索模型与数据";
+            semanticHeader.Font = new Font(Font, FontStyle.Bold);
+            semanticHeader.AutoSize = true;
+            semanticHeader.Dock = DockStyle.Top;
+            semanticHeader.Margin = new Padding(0, 8, 0, 6);
+            layout.Controls.Add(semanticHeader);
+
+            _semanticDownloadModelButton = new Button();
+            _semanticDownloadModelButton.Text = "下载语义搜索模型（约 1.5 GB）";
+            _semanticDownloadModelButton.AutoSize = true;
+            _semanticDownloadModelButton.MinimumSize = new Size(200, 30);
+            _semanticDownloadModelButton.Margin = new Padding(0, 0, 0, 8);
+            _semanticDownloadModelButton.Click += SemanticDownloadModelClicked;
+            layout.Controls.Add(_semanticDownloadModelButton);
+
+            FlowLayoutPanel dirButtons = new FlowLayoutPanel();
+            dirButtons.AutoSize = true;
+            dirButtons.Dock = DockStyle.Top;
+            dirButtons.Margin = new Padding(0, 0, 0, 10);
+
+            _openModelDirButton = new Button();
+            _openModelDirButton.Text = "打开模型目录";
+            _openModelDirButton.AutoSize = true;
+            _openModelDirButton.Click += delegate { OpenDirectorySafely(SemanticServiceLauncher.DefaultModelDirectory); };
+            dirButtons.Controls.Add(_openModelDirButton);
+
+            _openIndexDirButton = new Button();
+            _openIndexDirButton.Text = "打开索引目录";
+            _openIndexDirButton.AutoSize = true;
+            _openIndexDirButton.Click += delegate { OpenDirectorySafely(SemanticServiceLauncher.DefaultIndexDirectory); };
+            dirButtons.Controls.Add(_openIndexDirButton);
+
+            _openLogDirButton = new Button();
+            _openLogDirButton.Text = "打开日志目录";
+            _openLogDirButton.AutoSize = true;
+            _openLogDirButton.Click += delegate { OpenDirectorySafely(SemanticServiceLauncher.DefaultLogDirectory); };
+            dirButtons.Controls.Add(_openLogDirButton);
+            layout.Controls.Add(dirButtons);
 
             Label note = new Label();
             note.AutoSize = true;
-            note.MaximumSize = new Size(350, 0);
             note.ForeColor = Color.DimGray;
+            note.Dock = DockStyle.Top;
             note.Text =
-                "API Key 加密保存在当前 Windows 用户目录中；不会写入项目、"
-                + "安装目录或日志。更换电脑后需要重新填写密钥。";
+                "说明：API Key 使用 Windows DPAPI 加密保存在当前 Windows 用户目录中；"
+                + "不会写入项目、安装目录或日志。更换电脑后需要重新填写。\r\n\r\n"
+                + "本地语义模型与向量完全在本地运行，正文与向量绝不会上传至任何云端。";
             layout.Controls.Add(note);
-            page.Controls.Add(layout);
+
+            scroll.Controls.Add(layout);
+            page.Controls.Add(scroll);
             return page;
         }
 
@@ -724,7 +946,7 @@ namespace OutlookAiAssistant.UI
                     : model.ModelError;
                 MessageBox.Show(
                     this,
-                    detail + "\r\n\r\n请先点击“下载模型”（需要联网，之后可离线使用），"
+                    detail + "\r\n\r\n请前往“设置”页面点击“下载语义搜索模型”（需联网，之后可离线使用），"
                         + "完成后再建立索引。",
                     "AI 邮件助手",
                     MessageBoxButtons.OK,
@@ -772,7 +994,7 @@ namespace OutlookAiAssistant.UI
                 _semanticStatus.ForeColor = Color.FromArgb(176, 0, 32);
                 _semanticStatus.Text = "索引已停止：本地语义模型不可用。\r\n"
                     + report.Error
-                    + "\r\n请先点击“下载模型”，完成后再建立索引。";
+                    + "\r\n请前往“设置”页面点击“下载语义搜索模型”，完成后再建立索引。";
             }
             else if (report.Cancelled)
             {
@@ -980,6 +1202,10 @@ namespace OutlookAiAssistant.UI
                     return;
                 }
 
+                if (addIn.SemanticTray != null)
+                {
+                    addIn.SemanticTray.UpdateTrayIcon(false);
+                }
                 SetStatus("本地语义搜索服务已停止。");
             }
             finally
@@ -1043,14 +1269,20 @@ namespace OutlookAiAssistant.UI
                     await Task.Delay(1000);
                     if (addIn.SemanticClient.GetStatus().Reachable)
                     {
+                        if (addIn.SemanticTray != null)
+                        {
+                            addIn.SemanticTray.UpdateTrayIcon(true);
+                        }
                         SetStatus(successMessage);
                         return;
                     }
 
-                    // If the background process has died, stop waiting and
-                    // point at the log instead of burning another two minutes.
-                    if (elapsed >= 5
-                        && !SemanticServiceLauncher.IsProcessAlive())
+                    // Only declare failure after at least 30 seconds if the
+                    // background launcher process and python have definitely died.
+                    // Checking too early (e.g. 5 seconds) causes false failures
+                    // while PyTorch/CUDA are still importing in the background.
+                    if (elapsed >= 30
+                        && !addIn.SemanticServiceLauncher.IsServiceProcessAlive())
                     {
                         SetStatus("服务进程已退出，启动失败。请打开日志目录查看 "
                             + "semantic-service.log。设置页可一键打开日志目录。");
@@ -1079,6 +1311,11 @@ namespace OutlookAiAssistant.UI
             }
 
             SemanticServiceStatus status = addIn.SemanticClient.GetStatus();
+            if (addIn.SemanticTray != null)
+            {
+                addIn.SemanticTray.UpdateTrayIcon(status.Reachable);
+            }
+
             if (!status.Reachable)
             {
                 bool installed = SemanticServiceLauncher.IsInstalled();
@@ -1099,7 +1336,7 @@ namespace OutlookAiAssistant.UI
                     + FormatDeviceSuffix(status);
                 _semanticServiceStatus.ForeColor = Color.FromArgb(176, 96, 0);
                 _semanticIndexStatus.Text =
-                    "点击“下载模型”完成一次下载（需要联网，之后可离线使用）。"
+                    "请前往“设置”页面点击“下载语义搜索模型”（约 1.5 GB，需联网，之后可离线使用）。"
                     + (string.IsNullOrWhiteSpace(status.ModelError)
                         ? string.Empty
                         : "\r\n原因：" + status.ModelError);
@@ -1141,7 +1378,10 @@ namespace OutlookAiAssistant.UI
             _semanticBusy = busy;
             _semanticSearchButton.Enabled = !busy;
             _semanticIndexButton.Enabled = !busy;
-            _semanticDownloadModelButton.Enabled = !busy;
+            if (_semanticDownloadModelButton != null)
+            {
+                _semanticDownloadModelButton.Enabled = !busy;
+            }
             _semanticStartServiceButton.Enabled = !busy;
             _semanticRestartServiceButton.Enabled = !busy;
             _semanticStopServiceButton.Enabled = !busy;
@@ -1159,16 +1399,17 @@ namespace OutlookAiAssistant.UI
 
         private void SelectSearchTab()
         {
-            Control parent = _semanticResultsPanel;
-            while (parent != null && !(parent is TabControl))
+            if (_tabs != null && _tabs.TabPages.Count > 1)
             {
-                parent = parent.Parent;
+                _tabs.SelectedIndex = 1;
             }
+        }
 
-            TabControl tabs = parent as TabControl;
-            if (tabs != null && tabs.TabPages.Count > 1)
+        private void SelectSettingsTab()
+        {
+            if (_tabs != null && _tabs.TabPages.Count > 2)
             {
-                tabs.SelectedIndex = 1;
+                _tabs.SelectedIndex = 2;
             }
         }
 
@@ -1214,6 +1455,167 @@ namespace OutlookAiAssistant.UI
             return (bytes / (1024.0 * 1024.0)).ToString("0.0") + " MB";
         }
 
+        private void LoadSettingsToUI()
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || addIn.Settings == null)
+            {
+                return;
+            }
+
+            AppSettings settings = addIn.Settings;
+            if (_settingsBaseUrl != null)
+            {
+                _settingsBaseUrl.Text = settings.ApiBaseUrl ?? string.Empty;
+            }
+            if (_settingsModel != null)
+            {
+                _settingsModel.Text = settings.Model ?? string.Empty;
+            }
+            if (_settingsReasoningEffort != null)
+            {
+                _settingsReasoningEffort.SelectedIndex = string.Equals(
+                    settings.ReasoningEffort,
+                    "medium",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? 1
+                    : (string.Equals(
+                        settings.ReasoningEffort,
+                        "max",
+                        StringComparison.OrdinalIgnoreCase) ? 2 : 0);
+            }
+            if (_settingsApiKey != null)
+            {
+                _settingsApiKey.Text = string.Empty;
+            }
+            if (_settingsClearApiKey != null)
+            {
+                _settingsClearApiKey.Checked = false;
+            }
+            if (_settingsLanguage != null)
+            {
+                _settingsLanguage.Text = string.IsNullOrWhiteSpace(settings.SummaryLanguage)
+                    ? "简体中文"
+                    : settings.SummaryLanguage;
+            }
+            if (_settingsMaxCharacters != null)
+            {
+                _settingsMaxCharacters.Value = Math.Max(
+                    _settingsMaxCharacters.Minimum,
+                    Math.Min(
+                        _settingsMaxCharacters.Maximum,
+                        settings.MaxEmailCharacters > 0 ? settings.MaxEmailCharacters : 30000));
+            }
+            if (_settingsIdentityEmails != null)
+            {
+                _settingsIdentityEmails.Text = settings.IdentityEmailAddresses ?? string.Empty;
+            }
+            if (_settingsIdentityAliases != null)
+            {
+                _settingsIdentityAliases.Text = settings.IdentityAliases ?? string.Empty;
+            }
+
+            RefreshSettingsStatus();
+        }
+
+        private void SaveSettingsClicked(object sender, EventArgs e)
+        {
+            Connect addIn = Connect.Current;
+            if (addIn == null || addIn.Settings == null)
+            {
+                return;
+            }
+
+            try
+            {
+                AppSettings updated = addIn.Settings.Copy();
+                updated.ProviderId = string.Empty;
+                updated.ApiBaseUrl = (_settingsBaseUrl.Text ?? string.Empty).Trim();
+                updated.Model = (_settingsModel.Text ?? string.Empty).Trim();
+                updated.ReasoningEffort = (_settingsReasoningEffort.Text ?? "None").ToLowerInvariant();
+
+                OpenAiCompatibleClient.BuildChatCompletionsUrl(updated.ApiBaseUrl);
+                if (string.IsNullOrWhiteSpace(updated.Model))
+                {
+                    MessageBox.Show(
+                        this,
+                        "请填写 Model。",
+                        "AI 邮件助手",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                bool endpointChanged = !SettingsStore.IsSameApiEndpoint(
+                    addIn.Settings.ApiBaseUrl,
+                    updated.ApiBaseUrl);
+                if ((!addIn.SettingsStore.HasApiKey(addIn.Settings) || endpointChanged)
+                    && string.IsNullOrWhiteSpace(_settingsApiKey.Text)
+                    && !_settingsClearApiKey.Checked)
+                {
+                    MessageBox.Show(
+                        this,
+                        endpointChanged
+                            ? "更改服务地址后，请重新输入 API Key。"
+                            : "请填写 API Key。",
+                        "AI 邮件助手",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                updated.SummaryLanguage = string.IsNullOrWhiteSpace(_settingsLanguage.Text)
+                    ? "简体中文"
+                    : _settingsLanguage.Text.Trim();
+                updated.MaxEmailCharacters = Decimal.ToInt32(_settingsMaxCharacters.Value);
+                updated.IdentityEmailAddresses = (_settingsIdentityEmails.Text ?? string.Empty).Trim();
+                updated.IdentityAliases = (_settingsIdentityAliases.Text ?? string.Empty).Trim();
+
+                if (_settingsClearApiKey.Checked)
+                {
+                    addIn.SettingsStore.SetApiKey(updated, string.Empty);
+                }
+                else if (!string.IsNullOrWhiteSpace(_settingsApiKey.Text))
+                {
+                    addIn.SettingsStore.SetApiKey(updated, _settingsApiKey.Text);
+                }
+
+                addIn.SettingsStore.Save(updated);
+                addIn.ApplySettings(updated);
+
+                _settingsApiKey.Text = string.Empty;
+                _settingsClearApiKey.Checked = false;
+
+                RefreshSettingsStatus();
+                _settingsSaveStatus.Text = "设置已保存 (" + DateTime.Now.ToString("HH:mm:ss") + ")";
+                _settingsSaveStatus.ForeColor = Color.FromArgb(0, 120, 60);
+                SetStatus("设置已保存。");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    this,
+                    "保存设置失败：" + ex.Message,
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+            }
+        }
+
+        private void OpenDirectorySafely(string path)
+        {
+            string error = SemanticServiceLauncher.OpenDirectory(path);
+            if (!string.IsNullOrWhiteSpace(error))
+            {
+                MessageBox.Show(
+                    this,
+                    error,
+                    "AI 邮件助手",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+        }
+
         private bool EnsureConfigured()
         {
             Connect addIn = Connect.Current;
@@ -1240,13 +1642,12 @@ namespace OutlookAiAssistant.UI
 
             MessageBox.Show(
                 this,
-                "首次使用前，请先配置 Base URL、API Key 和 Model。",
+                "首次使用前，请前往“设置”页面填写 Base URL、API Key 和 Model 并保存。",
                 "AI 邮件助手",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Information);
-            bool saved = addIn.ShowSettings(this);
-            RefreshSettingsStatus();
-            return saved;
+            SelectSettingsTab();
+            return false;
         }
 
         private void RefreshSettingsStatus()
@@ -1254,16 +1655,25 @@ namespace OutlookAiAssistant.UI
             Connect addIn = Connect.Current;
             if (addIn == null || addIn.Settings == null)
             {
-                _configurationStatus.Text = "加载项正在初始化……";
+                if (_configurationStatus != null)
+                {
+                    _configurationStatus.Text = "加载项正在初始化……";
+                }
                 return;
             }
 
             AppSettings settings = addIn.Settings;
-            _configurationStatus.Text =
-                "模型：" + settings.Model + "\r\n"
-                + "API Key：" + (addIn.SettingsStore.HasApiKey(settings)
-                    ? "已加密保存"
-                    : "未配置");
+            if (_configurationStatus != null)
+            {
+                bool hasKey = addIn.SettingsStore.HasApiKey(settings);
+                bool hasModel = !string.IsNullOrWhiteSpace(settings.Model);
+                _configurationStatus.Text =
+                    "当前状态：模型 " + (hasModel ? settings.Model : "未填写")
+                    + " | API Key " + (hasKey ? "已加密保存" : "未配置");
+                _configurationStatus.ForeColor = (hasKey && hasModel)
+                    ? Color.FromArgb(0, 120, 60)
+                    : Color.FromArgb(176, 0, 32);
+            }
         }
 
         private void SetBusy(bool busy, string status)

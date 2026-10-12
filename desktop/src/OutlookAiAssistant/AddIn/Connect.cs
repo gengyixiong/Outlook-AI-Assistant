@@ -41,6 +41,7 @@ namespace OutlookAiAssistant.AddIn
         public SemanticSearchClient SemanticClient { get; private set; }
         public SemanticIndexService SemanticIndexService { get; private set; }
         public SemanticServiceLauncher SemanticServiceLauncher { get; private set; }
+        public SemanticServiceTray SemanticTray { get; private set; }
         public OutlookMailLocator MailLocator { get; private set; }
 
         public void OnConnection(
@@ -73,6 +74,7 @@ namespace OutlookAiAssistant.AddIn
                     SemanticClient);
                 SemanticServiceLauncher =
                     new SemanticServiceLauncher(SemanticClient);
+                SemanticTray = new SemanticServiceTray(SemanticServiceLauncher);
                 MailLocator = new OutlookMailLocator(_application);
                 Logger.Info("Outlook add-in connected.");
             }
@@ -94,6 +96,11 @@ namespace OutlookAiAssistant.AddIn
             ref Array custom)
         {
             Logger.Info("Outlook add-in disconnected.");
+            if (SemanticTray != null)
+            {
+                SemanticTray.Dispose();
+                SemanticTray = null;
+            }
             _ribbon = null;
             _taskPane = null;
             _taskPaneFactory = null;

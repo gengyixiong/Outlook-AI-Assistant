@@ -319,6 +319,12 @@ else {
   Write-Action "复制服务代码（保留 .venv 与模型缓存）"
   $serviceInstaller = Join-Path $sourceDir "embedding_service\install-service.ps1"
   if (-not (Test-Path -LiteralPath $serviceInstaller)) {
+    $repoInstaller = Join-Path $sourceDir "..\..\embedding_service\install-service.ps1"
+    if (Test-Path -LiteralPath $repoInstaller) {
+      $serviceInstaller = (Resolve-Path $repoInstaller).Path
+    }
+  }
+  if (-not (Test-Path -LiteralPath $serviceInstaller)) {
     Write-ErrMsg "包内缺少 embedding_service\install-service.ps1。"
     $script:Problems.Add("服务安装脚本缺失")
   }

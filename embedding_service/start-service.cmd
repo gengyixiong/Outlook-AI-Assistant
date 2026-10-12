@@ -1,4 +1,5 @@
 @echo off
+title Outlook AI Assistant - Semantic Service
 REM Starts the local semantic search service on 127.0.0.1.
 REM The service is only reachable from this machine.
 REM

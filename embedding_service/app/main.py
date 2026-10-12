@@ -20,11 +20,18 @@ from .config import ServiceSettings
 
 def configure_logging(settings: ServiceSettings, verbose: bool) -> None:
     settings.ensure_directories()
-    handlers = [logging.StreamHandler(sys.stderr)]
+    handlers = []
+    if sys.stderr is not None and hasattr(sys.stderr, "write"):
+        try:
+            handlers.append(logging.StreamHandler(sys.stderr))
+        except Exception:
+            pass
     try:
         handlers.append(logging.FileHandler(settings.log_path, encoding="utf-8"))
     except OSError:
         pass
+    if not handlers:
+        handlers.append(logging.NullHandler())
     logging.basicConfig(
         level=logging.DEBUG if verbose else logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
@@ -128,6 +135,7 @@ def main(argv=None) -> int:
         host=settings.host,
         port=settings.port,
         log_level="info",
+        log_config=None,
         access_log=False,
     )
     return 0

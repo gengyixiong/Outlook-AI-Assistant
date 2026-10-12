@@ -49,6 +49,8 @@ coverage/
 .vs/
 .idea/
 .vscode/
+.agents/
+.codex/
 *.user
 *.suo
 

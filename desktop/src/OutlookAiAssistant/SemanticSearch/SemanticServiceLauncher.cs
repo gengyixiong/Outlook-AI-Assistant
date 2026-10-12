@@ -26,6 +26,7 @@ namespace OutlookAiAssistant.SemanticSearch
     public sealed class SemanticServiceLauncher
     {
         private readonly SemanticSearchClient _client;
+        private Process _startedProcess;
 
         public SemanticServiceLauncher(SemanticSearchClient client)
         {
@@ -35,6 +36,28 @@ namespace OutlookAiAssistant.SemanticSearch
             }
 
             _client = client;
+        }
+
+        /// <summary>
+        /// True when the service process or its background launcher is still alive.
+        /// </summary>
+        public bool IsServiceProcessAlive()
+        {
+            if (_startedProcess != null)
+            {
+                try
+                {
+                    if (!_startedProcess.HasExited)
+                    {
+                        return true;
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return IsProcessAlive();
         }
 
         /// <summary>Directory the service is installed to, if present.</summary>
@@ -90,19 +113,55 @@ namespace OutlookAiAssistant.SemanticSearch
         {
             try
             {
-                foreach (Process process in Process.GetProcesses())
+                // 1. If port 8765 is listening, the service is definitely alive.
+                try
                 {
-                    try
+                    System.Net.NetworkInformation.IPGlobalProperties properties =
+                        System.Net.NetworkInformation.IPGlobalProperties.GetIPGlobalProperties();
+                    System.Net.IPEndPoint[] endPoints = properties.GetActiveTcpListeners();
+                    if (endPoints != null)
                     {
-                        string name = process.ProcessName;
-                        if (!string.Equals(name, "python",
-                                StringComparison.OrdinalIgnoreCase)
-                            && !string.Equals(name, "pythonw",
-                                StringComparison.OrdinalIgnoreCase))
+                        for (int i = 0; i < endPoints.Length; i++)
                         {
-                            continue;
+                            if (endPoints[i].Port == 8765)
+                            {
+                                return true;
+                            }
                         }
+                    }
+                }
+                catch
+                {
+                }
 
+                // 2. Check for python / pythonw processes.
+                Process[] pythonProcesses = Process.GetProcessesByName("python");
+                Process[] pythonwProcesses = Process.GetProcessesByName("pythonw");
+                int pythonCount = (pythonProcesses != null ? pythonProcesses.Length : 0)
+                    + (pythonwProcesses != null ? pythonwProcesses.Length : 0);
+
+                if (pythonCount == 0)
+                {
+                    return false;
+                }
+
+                bool inspectedAny = false;
+                Process[] all = new Process[pythonCount];
+                int offset = 0;
+                if (pythonProcesses != null)
+                {
+                    Array.Copy(pythonProcesses, 0, all, offset, pythonProcesses.Length);
+                    offset += pythonProcesses.Length;
+                }
+                if (pythonwProcesses != null)
+                {
+                    Array.Copy(pythonwProcesses, 0, all, offset, pythonwProcesses.Length);
+                }
+
+                for (int i = 0; i < all.Length; i++)
+                {
+                    using (Process process = all[i])
+                    {
                         string path = null;
                         try
                         {
@@ -112,21 +171,27 @@ namespace OutlookAiAssistant.SemanticSearch
                         }
                         catch
                         {
-                            // Access to another user's process is denied; skip.
+                            // Access denied or bitness mismatch.
                         }
 
-                        if (!string.IsNullOrEmpty(path)
-                            && path.IndexOf(
+                        if (!string.IsNullOrEmpty(path))
+                        {
+                            inspectedAny = true;
+                            if (path.IndexOf(
                                 InstalledServiceDirectory,
                                 StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            return true;
+                            {
+                                return true;
+                            }
                         }
                     }
-                    finally
-                    {
-                        process.Dispose();
-                    }
+                }
+
+                // If all python processes threw on MainModule inspection (e.g. 32-bit Outlook
+                // vs 64-bit Python), assume alive to avoid false-positive exit during startup.
+                if (!inspectedAny && pythonCount > 0)
+                {
+                    return true;
                 }
             }
             catch
@@ -202,10 +267,28 @@ namespace OutlookAiAssistant.SemanticSearch
         /// otherwise a message explaining why it could not be started.
         ///
         /// This launches the same start-service.cmd the user runs by hand,
-        /// but hidden and with stdout/stderr redirected to a log. Running the
-        /// script (instead of pythonw -m app.main directly) means the working
-        /// directory and venv activation match the manual path exactly, and
-        /// redirecting the streams means an early failure is never silent.
+        /// <summary>Process ID of the launched cmd.exe / service process.</summary>
+        public int StartedProcessId
+        {
+            get
+            {
+                if (_startedProcess != null)
+                {
+                    try
+                    {
+                        return _startedProcess.Id;
+                    }
+                    catch
+                    {
+                    }
+                }
+                return 0;
+            }
+        }
+
+        /// <summary>
+        /// Starts the service in the background without creating a console window or taskbar button.
+        /// If OAA_SERVICE_CONSOLE=1 is set, opens start-service.cmd in a visible console for debugging.
         /// </summary>
         public string Start()
         {
@@ -222,46 +305,41 @@ namespace OutlookAiAssistant.SemanticSearch
 
             try
             {
-                bool wantConsole = string.Equals(
+                if (string.Equals(
                     Environment.GetEnvironmentVariable("OAA_SERVICE_CONSOLE"),
                     "1",
-                    StringComparison.Ordinal);
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    string script = Path.Combine(
+                        InstalledServiceDirectory, "start-service.cmd");
 
-                string script = Path.Combine(
-                    InstalledServiceDirectory, "start-service.cmd");
+                    ProcessStartInfo consoleInfo = new ProcessStartInfo();
+                    consoleInfo.FileName = "cmd.exe";
+                    consoleInfo.Arguments = "/c \"" + script + "\"";
+                    consoleInfo.WorkingDirectory = InstalledServiceDirectory;
+                    consoleInfo.UseShellExecute = true;
+                    consoleInfo.WindowStyle = ProcessWindowStyle.Normal;
+
+                    _startedProcess = Process.Start(consoleInfo);
+                    return null;
+                }
+
+                string pythonExe = PythonPath();
+                if (!File.Exists(pythonExe))
+                {
+                    return "未找到 Python 运行环境: " + pythonExe;
+                }
 
                 ProcessStartInfo info = new ProcessStartInfo();
-                if (wantConsole)
-                {
-                    // Troubleshooting path: visible console running the script.
-                    info.FileName = "cmd.exe";
-                    info.Arguments = "/c \"" + script + "\"";
-                    info.UseShellExecute = true;
-                    info.WindowStyle = ProcessWindowStyle.Normal;
-                }
-                else
-                {
-                    // Hidden path: same script, no window, output captured to
-                    // a launcher log so a startup error can be diagnosed.
-                    string logPath = Path.Combine(
-                        ProductDirectory, "logs", "service-start.log");
-                    Directory.CreateDirectory(Path.GetDirectoryName(logPath));
+                info.FileName = pythonExe;
+                info.Arguments = "-m app.main";
+                info.WorkingDirectory = InstalledServiceDirectory;
+                info.CreateNoWindow = true;
+                info.UseShellExecute = false;
+                info.WindowStyle = ProcessWindowStyle.Hidden;
+                info.EnvironmentVariables["PYTHONUNBUFFERED"] = "1";
 
-                    // Use 'call' with the script path quoted, and the log
-                    // path quoted too. This form works even when the install
-                    // path contains spaces. The earlier forms failed because
-                    // cmd treats a quoted first token as a window title and
-                    // runs nothing, or rejects the nested quoting.
-                    info.FileName = "cmd.exe";
-                    info.Arguments = BuildHiddenStartArguments(
-                        script, logPath);
-                    info.UseShellExecute = false;
-                    info.CreateNoWindow = true;
-                    info.WorkingDirectory = InstalledServiceDirectory;
-                    info.EnvironmentVariables["OAA_NO_PAUSE"] = "1";
-                }
-
-                Process.Start(info);
+                _startedProcess = Process.Start(info);
                 return null;
             }
             catch (Exception ex)
@@ -278,6 +356,7 @@ namespace OutlookAiAssistant.SemanticSearch
         {
             if (!IsRunning())
             {
+                _startedProcess = null;
                 return null;
             }
 
@@ -287,7 +366,7 @@ namespace OutlookAiAssistant.SemanticSearch
                 // database cleanly.
                 _client.ShutdownService();
             }
-            catch (SemanticServiceException ex)
+            catch (Exception ex)
             {
                 Logger.Error("Graceful service shutdown failed.", ex);
             }
@@ -298,17 +377,19 @@ namespace OutlookAiAssistant.SemanticSearch
                 Thread.Sleep(250);
                 if (!IsRunning())
                 {
+                    _startedProcess = null;
                     return null;
                 }
             }
 
             // Fallback: terminate the process holding the service.
             string error = KillServiceProcesses();
-            for (int attempt = 0; attempt < 12; attempt++)
+            for (int attempt = 0; attempt < 20; attempt++)
             {
                 Thread.Sleep(250);
                 if (!IsRunning())
                 {
+                    _startedProcess = null;
                     return null;
                 }
             }
@@ -354,14 +435,13 @@ namespace OutlookAiAssistant.SemanticSearch
         {
             return
                 "$ErrorActionPreference = 'SilentlyContinue'; "
-                + "Get-CimInstance Win32_Process | Where-Object { "
+                + "Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { "
                 + "(($_.Name -eq 'python.exe' -or $_.Name -eq 'pythonw.exe') -and "
-                + "$_.CommandLine -like '*app.main*' -and "
-                + "$_.CommandLine -like '*embedding_service*') -or "
+                + "($_.CommandLine -like '*-m app.main*' -or $_.CommandLine -like '*embedding_service*')) -or "
                 + "($_.Name -eq 'cmd.exe' -and $_.CommandLine -like '*start-service.cmd*') "
-                + "} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }; "
-                + "Get-NetTCPConnection -LocalPort 8765 -State Listen | ForEach-Object { "
-                + "Stop-Process -Id $_.OwningProcess -Force }";
+                + "} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }; "
+                + "Get-NetTCPConnection -LocalPort 8765 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { "
+                + "Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }; exit 0";
         }
 
         /// <summary>

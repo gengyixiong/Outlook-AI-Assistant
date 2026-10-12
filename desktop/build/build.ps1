@@ -276,6 +276,14 @@ if (-not $SkipPackage) {
     -Filter "__pycache__" -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
 
+  # Ensure all shipped PowerShell scripts have a UTF-8 BOM so Windows PowerShell 5.1
+  # on any system locale (e.g. Chinese CP936) never parses them as ANSI.
+  $utf8Bom = New-Object System.Text.UTF8Encoding($true)
+  Get-ChildItem -LiteralPath $packageRoot -Recurse -Filter "*.ps1" | ForEach-Object {
+    $content = [System.IO.File]::ReadAllText($_.FullName, [System.Text.Encoding]::UTF8)
+    [System.IO.File]::WriteAllText($_.FullName, $content, $utf8Bom)
+  }
+
   $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v$productVersion.zip"
   if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
