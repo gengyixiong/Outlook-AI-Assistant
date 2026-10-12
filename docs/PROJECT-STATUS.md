@@ -7,6 +7,21 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.5.4 改进：语义服务安装到固定位置
+
+- 新增 `install-service.cmd` / `install-service.ps1`：把语义服务（含
+  `.venv`）安装到 `%LOCALAPPDATA%\OutlookAiAssistant\embedding_service`，
+  并创建开始菜单快捷方式。
+- 修复一个重要可用性问题：之前服务代码与 `.venv` 位于解压目录（往往是
+  Downloads），删除该目录就会导致语义搜索失效。现在安装后可安全删除
+  解压目录。
+- 新增 `uninstall-service.ps1`：默认保留模型缓存与索引，可选用
+  `-RemoveModel -RemoveIndex` 一并删除。
+- 代码与数据彻底分离：服务代码在 `embedding_service`，数据库/模型/日志/
+  令牌在 `%LOCALAPPDATA%\OutlookAiAssistant` 的其他子目录。
+- `setup-venv.cmd` 支持 `--no-pause`，供安装脚本非交互调用。
+- 新增 4 个路径独立性测试。
+
 ## 0.5.3 修复：Python 发现与 Store 别名
 
 - `setup-venv.cmd` 现在优先使用 `py` 启动器，自动跳过 PATH 中指向
@@ -90,11 +105,11 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - C# 单元测试：40/40 通过。
-- Python 单元测试：72/72 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
+- Python 单元测试：76/76 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.5.3.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.5.4.zip` 已生成。
 
 ## 尚需用户手动验收
 

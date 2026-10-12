@@ -6,6 +6,7 @@ REM Creates .venv next to this script and installs the CPU build of PyTorch
 REM (no CUDA required), then the remaining dependencies. Run once.
 REM
 REM The window stays open at the end so you can read the result.
+REM Pass --no-pause to suppress the final pause (used by install-service.ps1).
 REM
 REM Python discovery order:
 REM   1. the "py" launcher (installed by python.org installers)
@@ -18,6 +19,8 @@ setlocal EnableDelayedExpansion
 set SCRIPT_DIR=%~dp0
 set VENV_DIR=%SCRIPT_DIR%.venv
 set PYTHON_EXE=
+set NO_PAUSE=
+if /i "%~1"=="--no-pause" set NO_PAUSE=1
 
 REM --- 1. the py launcher -------------------------------------------------
 where py >nul 2>nul
@@ -71,7 +74,7 @@ if not defined PYTHON_EXE (
   echo      "python3.exe" aliases.
   echo   3. Re-run this script.
   echo.
-  pause
+  if not defined NO_PAUSE pause
   exit /b 1
 )
 
@@ -79,7 +82,7 @@ echo Using Python: %PYTHON_EXE%
 "%PYTHON_EXE%" -c "import sys;print(sys.version)"
 if errorlevel 1 (
   echo That Python could not be started.
-  pause
+  if not defined NO_PAUSE pause
   exit /b 1
 )
 
@@ -93,7 +96,7 @@ if not exist "%VENV_DIR%" (
     echo python.exe / python3.exe aliases under Settings ^> Apps ^>
     echo Advanced app settings ^> App execution aliases, then retry.
     echo.
-    pause
+    if not defined NO_PAUSE pause
     exit /b 1
   )
 )
@@ -101,7 +104,7 @@ if not exist "%VENV_DIR%" (
 call "%VENV_DIR%\Scripts\activate.bat"
 if errorlevel 1 (
   echo Failed to activate the virtual environment.
-  pause
+  if not defined NO_PAUSE pause
   exit /b 1
 )
 
@@ -122,7 +125,7 @@ if errorlevel 1 goto :failed
 echo.
 echo Setup complete. Next step: run download-model.cmd
 echo.
-pause
+if not defined NO_PAUSE pause
 endlocal
 exit /b 0
 
@@ -130,6 +133,6 @@ exit /b 0
 echo.
 echo Setup FAILED. Review the messages above.
 echo.
-pause
+if not defined NO_PAUSE pause
 endlocal
 exit /b 1

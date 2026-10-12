@@ -64,6 +64,27 @@ AssistantPaneControl（建立/更新索引）
 建立索引，并向加载项返回 HTTP 503；加载项显示“本地语义模型尚未就绪”并
 提供“下载模型”按钮。
 
+## 安装位置
+
+语义服务应安装在固定位置，而不是解压目录（通常是 Downloads，可能被清理）：
+
+```text
+%LOCALAPPDATA%\OutlookAiAssistant\embedding_service
+```
+
+运行一次 `install-service.cmd` 完成安装（含虚拟环境）。之后解压的发布包
+可以删除；卸载或重装也不依赖它。服务代码与数据分离：代码在
+`embedding_service`，数据（数据库、模型、日志、令牌）在
+`%LOCALAPPDATA%\OutlookAiAssistant` 的其他子目录。
+
+卸载服务（默认保留模型与索引）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall-service.ps1
+```
+
+加 `-RemoveModel -RemoveIndex` 可一并删除模型缓存和索引。
+
 这是刻意设计：早期版本会在模型不可用时静默地把每封邮件存成**无向量**的
 行，导致一个看似有几千封邮件的索引实际什么都搜不到。现在宁可快速失败也
 不写入无用数据。已经建立的有效索引在模型丢失后仍然保留且可搜索。

@@ -7,9 +7,32 @@ computer.
 
 ## Quick start
 
-Run these in order. The model download step is **required before indexing**;
-without it the add-in reports that the model is not ready instead of building
-a useless index.
+### Recommended: install to a stable location first
+
+The release ZIP is often extracted into Downloads, which Windows cleanup may
+delete. Installing the service to a fixed per-user location means the
+extracted folder can then be removed safely:
+
+```text
+install-service.cmd   # copies the service to %%LOCALAPPDATA%% and makes a shortcut
+```
+
+It installs to:
+
+```text
+%LOCALAPPDATA%\OutlookAiAssistant\embedding_service
+```
+
+Uninstall it with `uninstall-service.ps1` (from the release folder). By
+default it keeps the downloaded model and the semantic index so a reinstall
+does not re-download ~1.5 GB or rebuild the index; pass `-RemoveModel` and/or
+`-RemoveIndex` to delete them too.
+
+### Then run these in order
+
+The model download step is **required before indexing**; without it the
+add-in reports that the model is not ready instead of building a useless
+index.
 
 ```text
 setup-venv.cmd        # create .venv and install dependencies (once)
@@ -17,7 +40,9 @@ download-model.cmd    # download and cache the model (once, ~1.5 GB, needs netwo
 start-service.cmd     # start the service on 127.0.0.1:8765
 ```
 
-Each script keeps its window open at the end so you can read the result.
+Run them from the installed folder (`install-service.cmd` creates a Start
+Menu shortcut for `start-service.cmd`). Each script keeps its window open at
+the end so you can read the result.
 `download-model.cmd` shows live progress (`Fetching N files: xx%` and the
 download speed) and prints `SUCCESS` or a clear failure reason. On a machine
 that already has the model cached it finishes in seconds.
@@ -66,14 +91,19 @@ means:
 
 ## Storage layout
 
-All per-user data lives under `%LOCALAPPDATA%\OutlookAiAssistant`:
+Code and data are deliberately separated:
 
-| Path | Contents |
-| --- | --- |
-| `semantic-index\mail.db` | SQLite metadata, chunks, vectors, FTS index |
-| `models\` | Hugging Face model cache (offline after first download) |
-| `semantic-service-token` | loopback bearer token |
-| `logs\semantic-service.log` | service log (no mail content) |
+| Path | Contents | Safe to delete? |
+| --- | --- | --- |
+| Extracted release folder | install scripts + service source | Yes, after `install-service.cmd` |
+| `%LOCALAPPDATA%\OutlookAiAssistant\embedding_service` | installed service code + `.venv` | Only via `uninstall-service.ps1` |
+| `%LOCALAPPDATA%\OutlookAiAssistant\semantic-index\mail.db` | SQLite metadata, chunks, vectors, FTS index | Yes (also clears the index) |
+| `%LOCALAPPDATA%\OutlookAiAssistant\models\` | Hugging Face model cache | Yes (re-download needed) |
+| `%LOCALAPPDATA%\OutlookAiAssistant\semantic-service-token` | loopback bearer token | Regenerated on start |
+| `%LOCALAPPDATA%\OutlookAiAssistant\logs\semantic-service.log` | service log (no mail content) | Yes |
+
+The Python service never writes anything next to its code, so the code
+location and the data location can move independently.
 
 ## Security
 

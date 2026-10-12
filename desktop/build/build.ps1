@@ -228,7 +228,9 @@ if (-not $SkipPackage) {
   Copy-Item -LiteralPath (Join-Path $serviceSource "requirements.txt") `
     -Destination $serviceTarget
   foreach ($script in @(
-      "setup-venv.cmd", "start-service.cmd", "download-model.cmd")) {
+      "setup-venv.cmd", "start-service.cmd", "download-model.cmd",
+      "install-service.cmd", "install-service.ps1",
+      "uninstall-service.ps1")) {
     Copy-Item -LiteralPath (Join-Path $serviceSource $script) `
       -Destination $serviceTarget
   }
@@ -239,7 +241,7 @@ if (-not $SkipPackage) {
     -Filter "__pycache__" -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
 
-  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.5.3.zip"
+  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.5.4.zip"
   if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
   }

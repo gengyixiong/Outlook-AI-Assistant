@@ -57,11 +57,18 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 
 **按顺序执行以下步骤，模型下载步骤在建立索引前是必需的：**
 
-1. 安装 Python 3.10–3.12（`python.org`）。
+1. 安装 Python 3.10–3.12（`python.org`），安装时勾选 **Add python.exe to PATH**。
 2. 进入发布包中的 `embedding_service` 目录。
-3. 双击 `setup-venv.cmd`，等待依赖安装完成（CPU 版 PyTorch，约数百 MB）。
-4. 双击 `download-model.cmd`，**首次会下载模型（约 1.5 GB，需要联网）**
-   并缓存到：
+3. 双击 `install-service.cmd`，把服务安装到固定位置：
+
+```text
+%LOCALAPPDATA%\OutlookAiAssistant\embedding_service
+```
+
+   这一步会同时创建虚拟环境并装好依赖（包含 CPU 版 PyTorch）。完成后，**下载解压的发布包文件夹就可以删除了**，卸载、清理 Downloads 都不会影响它。
+
+4. 进入安装目录，双击 `download-model.cmd`，**首次会下载模型（约 1.5 GB，
+   需要联网）**：
 
 ```text
 %LOCALAPPDATA%\OutlookAiAssistant\models
@@ -71,7 +78,8 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
    结束时显示 `SUCCESS`，并**不会自动关闭窗口**。
    （如果模型已缓存，这一步几秒就完成。）
 
-5. 双击 `start-service.cmd` 启动服务；它会监听 `127.0.0.1:8765`。
+5. 双击 `start-service.cmd`（或使用开始菜单中的“Start semantic service”
+   快捷方式）启动服务；它监听 `127.0.0.1:8765`。**此窗口需保持打开。**
 6. 在 Outlook 侧栏“语义搜索”页点击“建立 / 更新语义索引”。
 
 如果忘记下载模型，索引不会偷偷写入无用数据：界面会明确提示
@@ -86,6 +94,26 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 建立索引时，“停止索引”按钮可用。点击后会在当前这一封邮件处理完成后
 停止；已经完成的邮件会保留，可稍后继续增量同步。索引过程不会阻塞
 Outlook UI。
+
+### 目录结构（哪些能删）
+
+| 路径 | 内容 | 能否删除 |
+| --- | --- | --- |
+| 解压出的发布包文件夹 | 安装脚本与服务源码 | 安装服务后可删 |
+| `%LOCALAPPDATA%\OutlookAiAssistant\app` | 加载项 DLL | 通过 `Uninstall.cmd` |
+| `%LOCALAPPDATA%\OutlookAiAssistant\embedding_service` | 已安装的服务与 `.venv` | 通过 `uninstall-service.ps1` |
+| `%LOCALAPPDATA%\OutlookAiAssistant\semantic-index` | 邮件索引（含正文副本与向量） | 可删（会清空索引） |
+| `%LOCALAPPDATA%\OutlookAiAssistant\models` | 模型缓存 | 可删（需重新下载） |
+| `%LOCALAPPDATA%\OutlookAiAssistant\logs` | 日志 | 可删 |
+
+卸载语义服务（保留模型与索引）：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\uninstall-service.ps1
+```
+
+如需连模型、索引一起删除，加上 `-RemoveModel -RemoveIndex`。
 
 ## 看不到侧栏
 
