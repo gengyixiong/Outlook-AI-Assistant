@@ -44,6 +44,37 @@ namespace OutlookAiAssistant.SemanticSearch
         }
 
         /// <summary>
+        /// Default local data directories. These are deterministic, so the
+        /// settings UI can show and open them even when the service is not
+        /// running and cannot report its own paths through /health.
+        /// </summary>
+        public static string ProductDirectory
+        {
+            get
+            {
+                return Path.Combine(
+                    Environment.GetFolderPath(
+                        Environment.SpecialFolder.LocalApplicationData),
+                    "OutlookAiAssistant");
+            }
+        }
+
+        public static string DefaultModelDirectory
+        {
+            get { return Path.Combine(ProductDirectory, "models"); }
+        }
+
+        public static string DefaultIndexDirectory
+        {
+            get { return Path.Combine(ProductDirectory, "semantic-index"); }
+        }
+
+        public static string DefaultLogDirectory
+        {
+            get { return Path.Combine(ProductDirectory, "logs"); }
+        }
+
+        /// <summary>
         /// True when the service answers on the loopback endpoint.
         /// </summary>
         public bool IsRunning()
@@ -112,9 +143,16 @@ namespace OutlookAiAssistant.SemanticSearch
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+                if (string.IsNullOrWhiteSpace(path))
                 {
-                    return "目录不存在：" + (path ?? string.Empty);
+                    return "目录路径未知。请先启动语义服务。";
+                }
+
+                // Create it when missing so the button always opens something
+                // instead of failing on a not-yet-created folder.
+                if (!Directory.Exists(path))
+                {
+                    Directory.CreateDirectory(path);
                 }
 
                 ProcessStartInfo info = new ProcessStartInfo();

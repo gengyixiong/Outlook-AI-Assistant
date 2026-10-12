@@ -160,11 +160,12 @@ namespace OutlookAiAssistant.UnitTests
                 True(card.Width >= 200,
                     "card must be wide enough to read, got " + card.Width);
 
-                Button open = FindButton(card, "打开邮件");
-                Button outlook = FindButton(card, "Outlook 搜索");
-                True(open != null, "card must expose an open button");
-                True(outlook != null, "card must expose an Outlook search button");
-                True(open.Width > 0 && open.Height > 0, "open button must render");
+                // The card no longer carries buttons; the whole card is the
+                // click target for opening the mail.
+                True(FindButton(card, "打开邮件") == null,
+                    "card must not carry a per-result open button");
+                True(card.ContextMenuStrip != null,
+                    "card must offer a context menu for open / Outlook search");
 
                 // Narrow the host: the card must shrink with the pane instead
                 // of keeping a fixed width and being clipped.

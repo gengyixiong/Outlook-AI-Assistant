@@ -563,29 +563,16 @@ namespace OutlookAiAssistant.UI
                 : result.Snippet;
             snippet.AutoSize = true;
             snippet.Dock = DockStyle.Top;
-            snippet.Margin = new Padding(0, 0, 0, 6);
+            snippet.Margin = new Padding(0, 0, 0, 2);
             card.Controls.Add(snippet);
 
-            FlowLayoutPanel buttons = new FlowLayoutPanel();
-            buttons.AutoSize = true;
-            buttons.AutoSizeMode = AutoSizeMode.GrowAndShrink;
-            buttons.Dock = DockStyle.Top;
-            buttons.WrapContents = true;
-            buttons.Margin = new Padding(0);
-            buttons.MinimumSize = new Size(0, 32);
-
-            Button open = new Button();
-            open.Text = "打开邮件";
-            open.AutoSize = true;
-            open.Click += delegate { openAction(); };
-            buttons.Controls.Add(open);
-
-            Button outlook = new Button();
-            outlook.Text = "Outlook 搜索";
-            outlook.AutoSize = true;
-            outlook.Click += delegate { outlookAction(); };
-            buttons.Controls.Add(outlook);
-            card.Controls.Add(buttons);
+            Label hint = new Label();
+            hint.Text = "双击卡片打开这封邮件";
+            hint.AutoSize = true;
+            hint.Dock = DockStyle.Top;
+            hint.ForeColor = Color.FromArgb(0, 103, 184);
+            hint.Margin = new Padding(0);
+            card.Controls.Add(hint);
 
             // A Panel with BorderStyle draws the card outline reliably and
             // docks to the row width so it resizes with the pane.
@@ -596,7 +583,34 @@ namespace OutlookAiAssistant.UI
             frame.AutoSizeMode = AutoSizeMode.GrowAndShrink;
             frame.Margin = new Padding(0);
             frame.Padding = new Padding(1);
+            frame.Cursor = Cursors.Hand;
             frame.Controls.Add(card);
+
+            // Double-clicking anywhere on the card opens the real mail. The
+            // card no longer carries per-result buttons; the whole card is the
+            // click target.
+            EventHandler openHandler = delegate { openAction(); };
+            frame.DoubleClick += openHandler;
+            card.DoubleClick += openHandler;
+            foreach (Control child in card.Controls)
+            {
+                child.Cursor = Cursors.Hand;
+                child.DoubleClick += openHandler;
+            }
+
+            // Right-click still offers the Outlook search fallback without
+            // cluttering the card.
+            ContextMenuStrip menu = new ContextMenuStrip();
+            menu.Items.Add("打开邮件", null, delegate { openAction(); });
+            menu.Items.Add("在 Outlook 中搜索此标题", null,
+                delegate { outlookAction(); });
+            frame.ContextMenuStrip = menu;
+            card.ContextMenuStrip = menu;
+            foreach (Control child in card.Controls)
+            {
+                child.ContextMenuStrip = menu;
+            }
+
             return frame;
         }
 

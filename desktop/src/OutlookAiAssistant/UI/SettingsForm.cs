@@ -43,6 +43,7 @@ namespace OutlookAiAssistant.UI
         private Button _semanticDownloadButton;
         private Button _semanticStopButton;
         private Button _semanticStartServiceButton;
+        private Button _helpButton;
         private Button _openModelDirButton;
         private Button _openIndexDirButton;
         private Button _openLogDirButton;
@@ -302,7 +303,9 @@ namespace OutlookAiAssistant.UI
             _openModelDirButton.AutoSize = true;
             _openModelDirButton.Click += delegate
             {
-                OpenPath(_lastStatus == null ? null : _lastStatus.ModelDir);
+                OpenPath(ResolveDirectory(
+                    _lastStatus == null ? null : _lastStatus.ModelDir,
+                    SemanticServiceLauncher.DefaultModelDirectory));
             };
             openButtons.Controls.Add(_openModelDirButton);
 
@@ -311,7 +314,9 @@ namespace OutlookAiAssistant.UI
             _openIndexDirButton.AutoSize = true;
             _openIndexDirButton.Click += delegate
             {
-                OpenPath(_lastStatus == null ? null : _lastStatus.IndexDir);
+                OpenPath(ResolveDirectory(
+                    _lastStatus == null ? null : _lastStatus.IndexDir,
+                    SemanticServiceLauncher.DefaultIndexDirectory));
             };
             openButtons.Controls.Add(_openIndexDirButton);
 
@@ -320,7 +325,9 @@ namespace OutlookAiAssistant.UI
             _openLogDirButton.AutoSize = true;
             _openLogDirButton.Click += delegate
             {
-                OpenPath(_lastStatus == null ? null : _lastStatus.LogDir);
+                OpenPath(ResolveDirectory(
+                    _lastStatus == null ? null : _lastStatus.LogDir,
+                    SemanticServiceLauncher.DefaultLogDirectory));
             };
             openButtons.Controls.Add(_openLogDirButton);
 
@@ -329,6 +336,12 @@ namespace OutlookAiAssistant.UI
             _semanticStartServiceButton.AutoSize = true;
             _semanticStartServiceButton.Click += SemanticStartServiceClicked;
             openButtons.Controls.Add(_semanticStartServiceButton);
+
+            _helpButton = new Button();
+            _helpButton.Text = "使用说明";
+            _helpButton.AutoSize = true;
+            _helpButton.Click += delegate { ShowUsageHelp(); };
+            openButtons.Controls.Add(_helpButton);
             panel.Controls.Add(openButtons);
 
             Label note = CreateNoteLabel();
@@ -338,6 +351,46 @@ namespace OutlookAiAssistant.UI
                 + "本机保存的邮件正文副本和向量。Executive Brief 不受影响。";
             panel.Controls.Add(note);
             return panel;
+        }
+
+        /// <summary>
+        /// Prefers the path the service reported, and falls back to the
+        /// deterministic default so the buttons still work when the service
+        /// is not running.
+        /// </summary>
+        private static string ResolveDirectory(string fromService, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(fromService) ? fallback : fromService;
+        }
+
+        private void ShowUsageHelp()
+        {
+            MessageBox.Show(
+                this,
+                "本地语义搜索使用说明"
+                + "\r\n\r\n【首次部署】（只需一次）"
+                + "\r\n1. 安装 Python 3.10-3.12（安装时勾选 Add python.exe to PATH）。"
+                + "\r\n2. 在发布包的 embedding_service 目录运行 install-service.cmd，"
+                + "把服务安装到本机固定位置。"
+                + "\r\n3. 运行 download-model.cmd 下载模型（约 1.5 GB，需要联网；"
+                + "完成后可离线使用）。"
+                + "\r\n4. 完成后，下载解压的发布包文件夹即可删除。"
+                + "\r\n\r\n【每次使用】"
+                + "\r\n1. 在这个设置页或“语义搜索”页点击“启动服务”"
+                + "（会打开一个控制台窗口，保持它开启）。"
+                + "\r\n2. 在“语义搜索”页点击“建立 / 更新语义索引”（首次较慢）。"
+                + "\r\n3. 输入中文描述，点击“语义搜索”，双击结果卡片即可打开原邮件。"
+                + "\r\n\r\n【常见问题】"
+                + "\r\n· 服务状态显示“未运行”：点击“启动服务”。"
+                + "\r\n· 模型显示“未就绪”：点击“下载模型”。"
+                + "\r\n· 提示 Python 版本不受支持：PyTorch 暂无 3.13+ 的预编译包，"
+                + "请安装 Python 3.12。"
+                + "\r\n· 打开目录失败：目录会在服务首次运行后创建，"
+                + "可先启动服务或运行一次索引。"
+                + "\r\n\r\n完整说明见发布包中的 Documentation/SEMANTIC-SEARCH.md。",
+                "使用说明",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
         private void OpenPath(string path)
@@ -707,8 +760,15 @@ namespace OutlookAiAssistant.UI
                 _semanticStatus.Text =
                     "语义索引状态：本地服务未运行。点击“启动服务”即可开始。";
                 _dataPathsStatus.Text =
-                    "（服务未运行，无法获取路径）\r\n"
-                    + "服务目录：" + SemanticServiceLauncher.InstalledServiceDirectory;
+                    "（服务未运行，以下是默认目录，可在服务首次运行后创建）\r\n"
+                    + FormatPathLine("模型目录",
+                        SemanticServiceLauncher.DefaultModelDirectory)
+                    + FormatPathLine("索引目录",
+                        SemanticServiceLauncher.DefaultIndexDirectory)
+                    + FormatPathLine("日志目录",
+                        SemanticServiceLauncher.DefaultLogDirectory)
+                    + FormatPathLine("服务目录",
+                        SemanticServiceLauncher.InstalledServiceDirectory);
                 return;
             }
 
@@ -729,9 +789,20 @@ namespace OutlookAiAssistant.UI
             _dataPathsStatus.Text =
                 "磁盘占用：" + FormatSize(status.SizeBytes)
                 + "（索引数据库及向量）\r\n"
-                + "模型目录：" + status.ModelDir + "\r\n"
-                + "索引目录：" + status.IndexDir + "\r\n"
-                + "日志目录：" + status.LogDir;
+                + FormatPathLine("模型目录", ResolveDirectory(
+                    status.ModelDir, SemanticServiceLauncher.DefaultModelDirectory))
+                + FormatPathLine("索引目录", ResolveDirectory(
+                    status.IndexDir, SemanticServiceLauncher.DefaultIndexDirectory))
+                + FormatPathLine("日志目录", ResolveDirectory(
+                    status.LogDir, SemanticServiceLauncher.DefaultLogDirectory));
+        }
+
+        private static string FormatPathLine(string label, string path)
+        {
+            string suffix = System.IO.Directory.Exists(path)
+                ? string.Empty
+                : "（尚未创建）";
+            return label + "：" + path + suffix + "\r\n";
         }
 
         private void SetSemanticBusy(bool busy)
