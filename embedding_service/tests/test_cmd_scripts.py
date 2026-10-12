@@ -18,7 +18,31 @@ from pathlib import Path
 import pytest
 
 SERVICE_DIR = Path(__file__).resolve().parent.parent
+REPO_ROOT = SERVICE_DIR.parent
 CMD_FILES = sorted(SERVICE_DIR.glob("*.cmd"))
+INSTALLER_CMD_FILES = sorted(
+    (REPO_ROOT / "desktop" / "installer").glob("*.cmd")
+)
+ALL_CMD_FILES = CMD_FILES + INSTALLER_CMD_FILES
+
+
+def test_installer_cmd_files_exist():
+    names = {p.name for p in INSTALLER_CMD_FILES}
+    assert "Install.cmd" in names
+    assert "Uninstall.cmd" in names
+
+
+def test_installer_checks_for_its_ps1():
+    """Running from inside a ZIP extracts incompletely; fail with guidance."""
+
+    for name, ps1 in (("Install.cmd", "install.ps1"),
+                      ("Uninstall.cmd", "uninstall.ps1")):
+        path = REPO_ROOT / "desktop" / "installer" / name
+        text = path.read_text(encoding="utf-8", errors="replace")
+        assert ps1 in text
+        assert "if not exist" in text.lower(), (
+            "%s must check that %s exists next to it" % (name, ps1)
+        )
 
 
 def test_cmd_files_exist():
@@ -32,7 +56,7 @@ def test_cmd_files_exist():
         assert expected in names, "%s is missing" % expected
 
 
-@pytest.mark.parametrize("cmd_file", CMD_FILES, ids=lambda p: p.name)
+@pytest.mark.parametrize("cmd_file", ALL_CMD_FILES, ids=lambda p: p.name)
 def test_no_unescaped_parens_in_echo_inside_if(cmd_file):
     """`echo (x)` inside an `if (...)` block breaks cmd.exe parsing."""
 
@@ -68,7 +92,7 @@ def test_no_unescaped_parens_in_echo_inside_if(cmd_file):
     )
 
 
-@pytest.mark.parametrize("cmd_file", CMD_FILES, ids=lambda p: p.name)
+@pytest.mark.parametrize("cmd_file", ALL_CMD_FILES, ids=lambda p: p.name)
 def test_no_script_closes_without_pause(cmd_file):
     """Every user-facing script must pause so its window does not vanish."""
 
@@ -80,7 +104,7 @@ def test_no_script_closes_without_pause(cmd_file):
         assert "pause" in text, "%s must pause so the user can read output" % cmd_file.name
 
 
-@pytest.mark.parametrize("cmd_file", CMD_FILES, ids=lambda p: p.name)
+@pytest.mark.parametrize("cmd_file", ALL_CMD_FILES, ids=lambda p: p.name)
 def test_crlf_line_endings(cmd_file):
     """cmd.exe can mis-handle LF-only files on some systems."""
 

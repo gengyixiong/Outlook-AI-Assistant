@@ -116,7 +116,7 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - C# 单元测试：40/40 通过。
-- Python 单元测试：76/76 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
+- Python 单元测试：97/97 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
