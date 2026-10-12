@@ -49,10 +49,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass ^
   -File "%SCRIPT_DIR%setup.ps1" %*
 set RESULT=%ERRORLEVEL%
 
+set NO_PAUSE=
+for %%a in (%*) do (
+  if /i "%%a"=="-NoPause" set NO_PAUSE=1
+)
+
 if not "%RESULT%"=="0" (
   echo.
   echo Some steps did not complete. Review the messages above.
   echo You can run diagnose.cmd for a full report.
+)
+
+if not "%NO_PAUSE%"=="1" (
+  echo.
+  pause
 )
 
 endlocal

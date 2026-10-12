@@ -1,4 +1,4 @@
-# Installs the local semantic search service to a stable per-user location.
+﻿# Installs the local semantic search service to a stable per-user location.
 #
 # WHY: the service code and its .venv used to live inside whatever folder the
 # release ZIP was extracted to (often Downloads). Deleting that folder broke

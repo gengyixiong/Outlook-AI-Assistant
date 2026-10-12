@@ -1,4 +1,4 @@
-# Removes the installed local semantic search service.
+﻿# Removes the installed local semantic search service.
 #
 # Usage:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File .\uninstall-service.ps1

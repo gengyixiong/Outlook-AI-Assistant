@@ -1,4 +1,4 @@
-# =====================================================================
+﻿# =====================================================================
 #  Outlook AI Assistant - unified installer  (setup.ps1)
 #
 #  One entry point for the whole installation. Safe to run repeatedly:
