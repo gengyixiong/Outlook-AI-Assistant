@@ -7,6 +7,19 @@
 Office.js 个人侧载在当前世纪互联租户中不可用，因此正式路线已经切换为
 classic Outlook 用户级 COM 加载项。
 
+## 0.5.2 修复：模型下载体验
+
+- 修复 `download-model.cmd` / `setup-venv.cmd` / `start-service.cmd` 窗口
+  一闪就关的问题：现在结束时都会 `pause`，可看到结果。
+- 模型下载新增**实时进度显示**（`Fetching N files: xx%` 与下载速度），
+  结束时输出 `SUCCESS` 或明确的失败原因。
+- 修复一个导致下载步骤直接报错的 bug：
+  `huggingface_hub` 需要 `tqdm_class` 是一个可构造的类，旧实现传了实例，
+  报 `'function' object is not iterable`。
+- 下载时 `max_workers=1`，避免多个进度条互相覆盖。
+- CLI 默认静默 httpx/huggingface/transformers 的刷屏日志，输出更可读。
+- 新增 4 个下载进度单元测试。
+
 ## 0.5.1 修复：模型未下载时的失败行为
 
 - 修复严重缺陷：模型不可用时，`/index/mail` 会静默保存**无向量**的邮件，
@@ -69,11 +82,11 @@ classic Outlook 用户级 COM 加载项。
 
 - C# Release 编译：通过。
 - C# 单元测试：40/40 通过。
-- Python 单元测试：68/68 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
+- Python 单元测试：72/72 通过（含 3 个真实 EmbeddingGemma 2 模型测试）。
 - 真实模型验证：在 CPU float32 上加载 768 维文本编码器，
   三个中文→英文检索用例均将正确邮件排在第 1 位。
 - C#/Python payload 字段契约测试：通过。
-- 发布包：`Outlook-AI-Assistant-v0.5.1.zip` 已生成。
+- 发布包：`Outlook-AI-Assistant-v0.5.2.zip` 已生成。
 
 ## 尚需用户手动验收
 

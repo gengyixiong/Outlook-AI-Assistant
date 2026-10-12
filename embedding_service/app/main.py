@@ -30,6 +30,15 @@ def configure_logging(settings: ServiceSettings, verbose: bool) -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
         handlers=handlers,
     )
+    if not verbose:
+        # The download/check CLI prints its own clean progress on stdout;
+        # silence the very chatty HTTP and model-loading libraries so the
+        # console output stays readable.
+        for name in (
+            "httpx", "httpcore", "urllib3", "huggingface_hub",
+            "filelock", "sentence_transformers", "transformers",
+        ):
+            logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def main(argv=None) -> int:
@@ -45,6 +54,13 @@ def main(argv=None) -> int:
     parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args(argv)
 
+    # Silence the Hugging Face symlink-mode warning on Windows so the CLI
+    # output stays readable. It is informational only.
+    import os as _os
+    _os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    _os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "0")
+    _os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+
     settings = ServiceSettings.from_env()
     if args.host:
         settings.host = args.host
@@ -56,18 +72,31 @@ def main(argv=None) -> int:
     state = app.state.service
 
     if args.download_model:
-        print("Downloading embedding model:", settings.model_id)
-        print("This is a one-time download (about 1.5 GB) and is cached at:")
-        print("  ", settings.model_cache_dir)
-        ok = state.model.download()
+        print("=" * 60)
+        print("Downloading the embedding model:", settings.model_id)
+        print("This is a one-time download of about 1.5 GB.")
+        print("Cache location:", settings.model_cache_dir)
+        print("=" * 60)
+        print()
+
+        def report(message):
+            # flush so a cmd.exe window shows progress immediately.
+            print(message, flush=True)
+
+        ok = state.model.download(progress=report)
+        print()
         if not ok:
             print("FAILED:", state.model.load_error)
             return 3
+
+        print("Verifying that the model loads ...")
         loaded = state.model.load()
-        print("downloaded: True")
-        print("available:", loaded)
+        print("model available:", loaded)
         if not loaded:
             print("warning:", state.model.load_error or "")
+            return 3
+
+        print("SUCCESS: the model is ready. You can now start the service.")
         return 0
 
     if args.index_check:

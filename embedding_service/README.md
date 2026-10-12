@@ -17,6 +17,11 @@ download-model.cmd    # download and cache the model (once, ~1.5 GB, needs netwo
 start-service.cmd     # start the service on 127.0.0.1:8765
 ```
 
+Each script keeps its window open at the end so you can read the result.
+`download-model.cmd` shows live progress (`Fetching N files: xx%` and the
+download speed) and prints `SUCCESS` or a clear failure reason. On a machine
+that already has the model cached it finishes in seconds.
+
 Then, in Outlook, open the **Semantic Search** tab and click
 **Download model** if the status says the model is not ready, then
 **Build / update semantic index**.

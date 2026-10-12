@@ -67,6 +67,10 @@ Base URL 和 Model 可以手动编辑，程序向 `{Base URL}/chat/completions` 
 %LOCALAPPDATA%\OutlookAiAssistant\models
 ```
 
+   该窗口会显示实时进度（`Fetching N files: xx%` 与下载速度），
+   结束时显示 `SUCCESS`，并**不会自动关闭窗口**。
+   （如果模型已缓存，这一步几秒就完成。）
+
 5. 双击 `start-service.cmd` 启动服务；它会监听 `127.0.0.1:8765`。
 6. 在 Outlook 侧栏“语义搜索”页点击“建立 / 更新语义索引”。
 

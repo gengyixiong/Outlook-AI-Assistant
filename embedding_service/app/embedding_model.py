@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import List, Optional, Sequence
+from typing import Callable, List, Optional, Sequence
 
 import numpy as np
 
@@ -24,6 +24,100 @@ logger = logging.getLogger("oaa.embedding")
 
 class EmbeddingModelUnavailable(RuntimeError):
     """Raised when the model cannot be loaded or used."""
+
+
+class _ProgressReporter:
+    """Factory for a tqdm subclass that forwards progress to a callback.
+
+    huggingface_hub uses ``tqdm_class`` as a *class* (it calls
+    ``cls(...)`` and sometimes wraps it), so this must return a real
+    subclass, not an instance. The callback is carried on the class because
+    the hub constructs the bars itself.
+    """
+
+    @staticmethod
+    def make(report: Optional[Callable[[str], None]]):
+        try:
+            from tqdm.auto import tqdm as _tqdm
+        except Exception:  # pragma: no cover - tqdm ships with HF hub
+            return _FallbackProgress.with_report(report)
+
+        import time as _time
+
+        class _ForwardingTqdm(_tqdm):  # type: ignore[misc]
+            _oaa_report = report
+            _oaa_last = 0.0
+            _OAA_INTERVAL = 2.0
+
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._oaa_name = (
+                    args[1] if len(args) > 1
+                    else kwargs.get("desc", "") or "files"
+                )
+                self._oaa_last = 0.0
+
+            def update(self, n=1):
+                super().update(n)
+                self._oaa_maybe_report()
+
+            def _oaa_maybe_report(self):
+                if self._oaa_report is None:
+                    return
+                now = _time.time()
+                if now - self._oaa_last < _ForwardingTqdm._OAA_INTERVAL:
+                    return
+                type(self)._oaa_last = now
+                total = getattr(self, "total", None)
+                done = getattr(self, "n", 0)
+                if total:
+                    percent = 100.0 * done / total
+                    try:
+                        self._oaa_report(
+                            "  %s: %d/%d (%.1f%%)"
+                            % (self._oaa_name, done, total, percent)
+                        )
+                    except Exception:
+                        pass
+
+        return _ForwardingTqdm
+
+
+class _FallbackProgress:
+    """Minimal tqdm replacement used when tqdm is not installed."""
+
+    _oaa_report = None
+
+    def __init__(self, *args, **kwargs):
+        self.total = kwargs.get("total")
+        self.n = 0
+        self.desc = kwargs.get("desc", "")
+
+    @classmethod
+    def with_report(cls, report):
+        return cls
+
+    def update(self, n=1):
+        self.n += n
+        report = type(self)._oaa_report
+        if report and self.total:
+            try:
+                report("  %s: %d/%d" % (self.desc or "files", self.n, self.total))
+            except Exception:
+                pass
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+    def set_description(self, value):
+        self.desc = value
 
 
 class EmbeddingModel:
@@ -95,13 +189,15 @@ class EmbeddingModel:
                 logger.error(self._load_error)
                 return False
 
-    def download(self) -> bool:
+    def download(self, progress: Optional[Callable[[str], None]] = None) -> bool:
         """Download and cache the model without keeping it loaded.
 
         This is the explicit download step the add-in exposes so a fresh
-        machine does not silently fail every indexing attempt. Returns True
-        when the snapshot is present locally. Network errors are reported
-        through ``load_error``.
+        machine does not silently fail every indexing attempt. ``progress`` is
+        called with human-readable status lines so the CLI and the UI can show
+        what is happening on a multi-minute download. Returns True when the
+        snapshot is present locally. Errors are reported through
+        ``load_error``.
         """
 
         with self._lock:
@@ -112,13 +208,31 @@ class EmbeddingModel:
                     "huggingface_hub is not installed: %s" % ex
                 )
                 return False
+
+            report = progress or (lambda _message: None)
             try:
-                snapshot_download(repo_id=self.model_id)
+                report("Checking local cache for %s ..." % self.model_id)
+                # tqdm_class writes a live progress bar to stderr. We also
+                # forward throttled plain status lines, which are what a
+                # cmd.exe window and the UI log display reliably (\r-based
+                # bars do not render well in every host).
+                _FallbackProgress._oaa_report = report
+                reporter = _ProgressReporter.make(report)
+                # One worker keeps a single, readable progress bar. Parallel
+                # workers each print their own bar and overwrite each other in
+                # a plain console window.
+                snapshot_download(
+                    repo_id=self.model_id,
+                    tqdm_class=reporter,
+                    max_workers=1,
+                )
                 self._load_error = None
+                report("Download complete.")
                 return True
             except Exception as ex:  # pragma: no cover - network dependent
                 self._load_error = self._humanize_load_error(ex)
                 logger.error(self._load_error)
+                report("FAILED: %s" % self._load_error)
                 return False
 
     def _humanize_load_error(self, ex: Exception) -> str:

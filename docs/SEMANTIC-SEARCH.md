@@ -73,6 +73,9 @@ AssistantPaneControl（建立/更新索引）
 - Outlook “语义搜索”页或“设置 > 语义索引”中的“下载模型”按钮。
 - 命令行 `embedding_service\download-model.cmd`。
 
+命令行会显示实时进度（`Fetching N files: xx%` 与下载速度），
+结束时输出 `SUCCESS`，并保留窗口以供查看结果。
+
 ### 停止索引
 
 索引过程中“停止索引”按钮可用。取消会在当前邮件处理完成后生效，已完成的
