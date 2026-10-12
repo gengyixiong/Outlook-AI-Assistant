@@ -12,6 +12,7 @@ using System.Runtime.Versioning;
 [assembly: TargetFramework(
     ".NETFramework,Version=v4.8",
     FrameworkDisplayName = ".NET Framework 4.8")]
-[assembly: AssemblyVersion("0.6.8.0")]
-[assembly: AssemblyFileVersion("0.6.8.0")]
 
+// AssemblyVersion and AssemblyFileVersion are generated from the repo VERSION
+// file at build time (see desktop/build/build.ps1) so there is one source of
+// truth. Do not add them here.

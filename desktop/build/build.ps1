@@ -10,11 +10,24 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version 2.0
 
 $desktopRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent $desktopRoot
 $sourceRoot = Join-Path $desktopRoot "src\OutlookAiAssistant"
 $testRoot = Join-Path $desktopRoot "tests\OutlookAiAssistant.UnitTests"
 $buildRoot = Join-Path $desktopRoot ("build\" + $Configuration)
 $releaseRoot = Join-Path $desktopRoot "release"
 $packageRoot = Join-Path $releaseRoot "package"
+
+# Single source of truth for the product version.
+$versionFile = Join-Path $repoRoot "VERSION"
+if (-not (Test-Path -LiteralPath $versionFile)) {
+  throw "VERSION file is missing at $versionFile"
+}
+$productVersion = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+if ($productVersion -notmatch '^\d+\.\d+\.\d+$') {
+  throw "VERSION must be MAJOR.MINOR.PATCH, got '$productVersion'"
+}
+$assemblyVersion = "$productVersion.0"
+Write-Host "Product version: $productVersion"
 
 function Find-FirstFile {
   param(
@@ -93,9 +106,20 @@ $extensibility = Find-GacAssembly -Roots $gacRoots `
 New-Item -ItemType Directory -Path $buildRoot -Force | Out-Null
 $assemblyPath = Join-Path $buildRoot "OutlookAiAssistant.dll"
 $pdbPath = Join-Path $buildRoot "OutlookAiAssistant.pdb"
+
+# Generate the assembly version file from VERSION so the DLL version and the
+# package name can never drift apart.
+$versionSource = Join-Path $buildRoot "GeneratedVersion.cs"
+@"
+using System.Reflection;
+[assembly: AssemblyVersion("$assemblyVersion")]
+[assembly: AssemblyFileVersion("$assemblyVersion")]
+"@ | Set-Content -LiteralPath $versionSource -Encoding UTF8
+
 $sourceFiles = Get-ChildItem -LiteralPath $sourceRoot -Recurse -Filter "*.cs" |
   Sort-Object FullName |
   ForEach-Object FullName
+$sourceFiles += $versionSource
 
 if ($sourceFiles.Count -eq 0) {
   throw "No C# source files were found."
@@ -198,6 +222,17 @@ if (-not $SkipPackage) {
   New-Item -ItemType Directory -Path $packageRoot -Force | Out-Null
   Copy-Item -LiteralPath $assemblyPath -Destination $packageRoot
 
+  # Stamp the product version into the package so setup.cmd can compare
+  # against what is already installed.
+  Set-Content -LiteralPath (Join-Path $packageRoot "VERSION") `
+    -Value $productVersion -Encoding ASCII
+
+  # Ship the unified installer as the single entry point.
+  Copy-Item -LiteralPath (Join-Path $desktopRoot "installer\setup.cmd") `
+    -Destination $packageRoot
+  Copy-Item -LiteralPath (Join-Path $desktopRoot "installer\setup.ps1") `
+    -Destination $packageRoot
+
   Copy-Item -LiteralPath (Join-Path $desktopRoot "installer\install.ps1") `
     -Destination $packageRoot
   Copy-Item -LiteralPath (Join-Path $desktopRoot "installer\uninstall.ps1") `
@@ -241,7 +276,7 @@ if (-not $SkipPackage) {
     -Filter "__pycache__" -ErrorAction SilentlyContinue |
     ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
 
-  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v0.6.8.zip"
+  $zipPath = Join-Path $releaseRoot "Outlook-AI-Assistant-v$productVersion.zip"
   if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
   }

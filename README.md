@@ -75,24 +75,32 @@ Regarding the curtain wall edit, can we also edit the Panels individually?
 
 ## 如何安装
 
-1. 从 GitHub Release 下载最新发布包并解压。
+1. 从 GitHub Release 下载最新发布包并解压（**不要在压缩包里直接运行**）。
 2. 完全退出 classic Outlook。
-3. 双击 `Install.cmd`。
-4. 重新启动 Outlook。
-5. 在右侧栏“设置”中填写 OpenAI-compatible Base URL、API Key、Model 和 Reasoning Effort。
-   新安装默认使用 `https://api.openai.com/v1`、`gpt-5.6-luna` 和 `None`；模型可手动输入，Reasoning Effort 可选 None、Medium 或 Max。
-6. 如需本地语义搜索：安装 Python 3.10–3.12（勾选 Add python.exe to PATH）后，
-   在发布包的 `embedding_service` 中先运行 `install-service.cmd` 把服务安装到
-   固定位置（之后下载文件夹即可删除），再依次运行
-   `download-model.cmd`、`start-service.cmd`，
-   然后在侧栏“语义搜索”页点击“建立 / 更新语义索引”。模型未下载时界面会
-   明确提示，并提供“下载模型”按钮。
+3. 双击解压目录中的 **`setup.cmd`**。它会自动完成全部安装：
+   - 检查 Python 3.10–3.12
+   - 安装 / 更新 Outlook 加载项
+   - 安装 / 更新本地语义搜索服务
+   - 创建 Python 依赖环境（一次）
+   - 下载本地模型（一次，约 1.5 GB）
 
-安装不需要管理员权限。安装脚本会把插件复制到当前用户的 `%LOCALAPPDATA%\OutlookAiAssistant\app` 并写入当前用户注册表；安装完成后可以删除下载并解压的发布包目录。
+   `setup.cmd` 可以重复运行：版本相同时只补齐缺失部分，其余自动跳过；
+   升级时覆盖代码但保留依赖环境、模型、索引与设置。
 
-更新时，关闭 Outlook 后运行新版本的 `Install.cmd` 即可；已有设置、加密 API Key 和本地语义索引会保留。
+4. 重新启动 Outlook，右侧出现“AI 邮件助手”。
+5. 在“设置”中填写 OpenAI-compatible Base URL、API Key、Model 和
+   Reasoning Effort。
+6. 在“语义搜索”页点击“启动服务”，再点击“建立 / 更新语义索引”。
+7. 安装完成后可以删除解压出来的文件夹。
 
-卸载时，关闭 Outlook 后运行 `Uninstall.cmd`。默认保留设置、加密 API Key 和本地语义索引，方便以后重新安装。
+安装不需要管理员权限。安装脚本把加载项复制到当前用户的
+`%LOCALAPPDATA%\OutlookAiAssistantpp`，服务安装到
+`%LOCALAPPDATA%\OutlookAiAssistant\embedding_service`，只写当前用户注册表。
+
+更新：关闭 Outlook 后对新的发布包再次运行 `setup.cmd`。
+
+卸载：关闭 Outlook 后运行 `Uninstall.cmd`（保留设置、密钥与索引）。
+彻底删除本地数据请加 `-RemoveSettings`。
 
 ## 许可证
 
